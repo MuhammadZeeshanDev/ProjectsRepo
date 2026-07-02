@@ -1,0 +1,160 @@
+[
+  {
+    "album": "Broken Heart",
+    "title": "Broken Heart",
+    "cover": "Cover.jpg",
+    "songs": [
+      {
+        "title": "Blue horizone",
+        "artist": "fonk",
+        "filename": "Songs/Broken Heart/Blue horizone - fonk.mpeg"
+      },
+      {
+        "title": "Competition \u0026 Currency",
+        "artist": "Talha Anjum",
+        "filename": "Songs/Broken Heart/Competition \u0026 Currency - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Ends",
+        "artist": "Hassan Raheem",
+        "filename": "Songs/Broken Heart/Ends - Hassan Raheem.mpeg"
+      },
+      {
+        "title": "Faasle",
+        "artist": "Aditiya rakhi",
+        "filename": "Songs/Broken Heart/Faasle - Aditiya rakhi.mpeg"
+      },
+      {
+        "title": "Fast lane",
+        "artist": "Talha Yunus",
+        "filename": "Songs/Broken Heart/Fast lane - Talha Yunus.mpeg"
+      },
+      {
+        "title": "fonk",
+        "artist": "fonk",
+        "filename": "Songs/Broken Heart/fonk-fonk.mpeg"
+      },
+      {
+        "title": "Freestyle",
+        "artist": "Talha Yunus",
+        "filename": "Songs/Broken Heart/Freestyle - Talha Yunus.mpeg"
+      },
+      {
+        "title": "Had it all",
+        "artist": "Asim Azhar",
+        "filename": "Songs/Broken Heart/Had it all - Asim Azhar.mpeg"
+      }
+    ]
+  },
+  {
+    "album": "My Terrible Mind",
+    "title": "My Terrible Mind",
+    "cover": "Cover.jpg",
+    "songs": [
+      {
+        "title": "Aese kese",
+        "artist": "Hassan Raheem",
+        "filename": "Songs/My Terrible Mind/Aese kese - Hassan Raheem.mpeg"
+      },
+      {
+        "title": "Crazy maybe",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Crazy maybe - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Departure lane",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Departure lane-Talha Anjum.mpeg"
+      },
+      {
+        "title": "Heart beat",
+        "artist": "Talha Yunus",
+        "filename": "Songs/My Terrible Mind/Heart beat - Talha Yunus.mpeg"
+      },
+      {
+        "title": "Heart Break kid",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Heart Break kid - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Incurable Sadness",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Incurable Sadness - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Jasmine",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Jasmine-Talha Anjum.mpeg"
+      },
+      {
+        "title": "Let go",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Let go-Talha Anjum.mpeg"
+      },
+      {
+        "title": "Rainy Nights",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Rainy Nights - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Run it back",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Run it back - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Young OG",
+        "artist": "Talha Anjum",
+        "filename": "Songs/My Terrible Mind/Young OG - Talha Anjum.mpeg"
+      }
+    ]
+  },
+  {
+    "album": "Open letter",
+    "title": "Open letter",
+    "cover": "cover.jpg",
+    "songs": [
+      {
+        "title": "Kabhi",
+        "artist": "Talha Anjum",
+        "filename": "Songs/Open letter/Kabhi - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Karachi mera",
+        "artist": "Talha Anjum",
+        "filename": "Songs/Open letter/Karachi mera - Talha Anjum.mpeg"
+      }
+    ]
+  },
+  {
+    "album": "Rockstar without a Guitar",
+    "title": "Rockstar without a Guitar",
+    "cover": "Cover.jpg",
+    "songs": [
+      {
+        "title": "Jokhay aur mein",
+        "artist": "Talha Anjum",
+        "filename": "Songs/Rockstar without a Guitar/Jokhay aur mein - Talha Anjum.mpeg"
+      },
+      {
+        "title": "loneliness",
+        "artist": "Talha Anjum",
+        "filename": "Songs/Rockstar without a Guitar/loneliness - Talha Anjum.mpeg"
+      },
+      {
+        "title": "Mutassir",
+        "artist": "Talha Yunus",
+        "filename": "Songs/Rockstar without a Guitar/Mutassir - Talha Yunus.mpeg"
+      },
+      {
+        "title": "SadXmoonlight",
+        "artist": "xxxtenicion",
+        "filename": "Songs/Rockstar without a Guitar/SadXmoonlight - xxxtenicion.mpeg"
+      },
+      {
+        "title": "Someday",
+        "artist": "labbit",
+        "filename": "Songs/Rockstar without a Guitar/Someday-labbit.mpeg"
+      }
+    ]
+  }
+]

@@ -1,0 +1,47 @@
+{
+  "album": "Broken Heart",
+  "title": "Broken Heart",
+  "cover": "Cover.jpg",
+  "songs": [
+    {
+      "title": "Blue horizone",
+      "artist": "fonk",
+      "filename": "Songs/Broken Heart/Blue horizone - fonk.mpeg"
+    },
+    {
+      "title": "Competition \u0026 Currency",
+      "artist": "Talha Anjum",
+      "filename": "Songs/Broken Heart/Competition \u0026 Currency - Talha Anjum.mpeg"
+    },
+    {
+      "title": "Ends",
+      "artist": "Hassan Raheem",
+      "filename": "Songs/Broken Heart/Ends - Hassan Raheem.mpeg"
+    },
+    {
+      "title": "Faasle",
+      "artist": "Aditiya rakhi",
+      "filename": "Songs/Broken Heart/Faasle - Aditiya rakhi.mpeg"
+    },
+    {
+      "title": "Fast lane",
+      "artist": "Talha Yunus",
+      "filename": "Songs/Broken Heart/Fast lane - Talha Yunus.mpeg"
+    },
+    {
+      "title": "fonk",
+      "artist": "fonk",
+      "filename": "Songs/Broken Heart/fonk-fonk.mpeg"
+    },
+    {
+      "title": "Freestyle",
+      "artist": "Talha Yunus",
+      "filename": "Songs/Broken Heart/Freestyle - Talha Yunus.mpeg"
+    },
+    {
+      "title": "Had it all",
+      "artist": "Asim Azhar",
+      "filename": "Songs/Broken Heart/Had it all - Asim Azhar.mpeg"
+    }
+  ]
+}

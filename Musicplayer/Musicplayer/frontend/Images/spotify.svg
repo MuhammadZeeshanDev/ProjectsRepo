@@ -1,0 +1,10 @@
+<svg width="200" height="200" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="12" cy="12" r="10" fill="url(#spotifyGreenGradient)"/>
+  <path d="M16.5 15.25c-.3 0-.5-.1-.8-.2-2.2-1.2-5.2-1.5-7.6-.8-.4.1-.9-.2-1-.6-.1-.4.2-.9.6-1 2.7-.8 6.1-.5 8.6.9.4.2.6.7.4 1.1-.2.3-.5.6-.9.6zm1.2-2.8c-.3 0-.5-.1-.8-.2-2.7-1.5-6.7-1.9-9.8-1.1-.4.1-.9-.2-1-.6-.1-.4.2-.9.6-1 3.5-.9 7.9-.5 10.9 1.2.4.2.6.7.4 1.1-.2.3-.5.6-.9.6zm1.1-3c-.3 0-.5-.1-.8-.2-3.1-1.7-8.2-2.1-11.6-1.2-.4.1-.9-.2-1-.6-.1-.4.2-.9.6-1 3.8-1 9.3-.6 12.7 1.4.4.2.6.7.4 1.1-.2.3-.5.5-.9.5z" fill="white"/>
+  <defs>
+    <linearGradient id="spotifyGreenGradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1DB954"/>
+      <stop offset="1" stop-color="#1AA34A"/>
+    </linearGradient>
+  </defs>
+</svg>

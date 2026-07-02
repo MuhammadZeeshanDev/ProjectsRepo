@@ -1,0 +1,17 @@
+{
+  "album": "Open letter",
+  "title": "Open letter",
+  "cover": "cover.jpg",
+  "songs": [
+    {
+      "title": "Kabhi",
+      "artist": "Talha Anjum",
+      "filename": "Songs/Open letter/Kabhi - Talha Anjum.mpeg"
+    },
+    {
+      "title": "Karachi mera",
+      "artist": "Talha Anjum",
+      "filename": "Songs/Open letter/Karachi mera - Talha Anjum.mpeg"
+    }
+  ]
+}

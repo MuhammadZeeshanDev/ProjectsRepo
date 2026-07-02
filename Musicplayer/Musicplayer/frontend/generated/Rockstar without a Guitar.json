@@ -1,0 +1,32 @@
+{
+  "album": "Rockstar without a Guitar",
+  "title": "Rockstar without a Guitar",
+  "cover": "Cover.jpg",
+  "songs": [
+    {
+      "title": "Jokhay aur mein",
+      "artist": "Talha Anjum",
+      "filename": "Songs/Rockstar without a Guitar/Jokhay aur mein - Talha Anjum.mpeg"
+    },
+    {
+      "title": "loneliness",
+      "artist": "Talha Anjum",
+      "filename": "Songs/Rockstar without a Guitar/loneliness - Talha Anjum.mpeg"
+    },
+    {
+      "title": "Mutassir",
+      "artist": "Talha Yunus",
+      "filename": "Songs/Rockstar without a Guitar/Mutassir - Talha Yunus.mpeg"
+    },
+    {
+      "title": "SadXmoonlight",
+      "artist": "xxxtenicion",
+      "filename": "Songs/Rockstar without a Guitar/SadXmoonlight - xxxtenicion.mpeg"
+    },
+    {
+      "title": "Someday",
+      "artist": "labbit",
+      "filename": "Songs/Rockstar without a Guitar/Someday-labbit.mpeg"
+    }
+  ]
+}

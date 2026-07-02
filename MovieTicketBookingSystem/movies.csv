@@ -1,0 +1,4 @@
+MovieID,MovieName,Genre,Time,Seats,Price
+101,Avengers,Action,6:00 PM,50,800
+102,Batman,Action,9:00 PM,40,700
+103,Frozen,Animation,3:00 PM,60,500
