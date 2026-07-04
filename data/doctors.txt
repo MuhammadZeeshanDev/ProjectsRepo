@@ -1,5 +1,0 @@
-D001|Dr. Ahmed Khan|Cardiology|0300-1112233|Available
-D002|Dr. Sara Malik|General Medicine|0300-2223344|Available
-D003|Dr. Bilal Hussain|Emergency Medicine|0300-3334455|Available
-D004|Dr. Ayesha Raza|Pediatrics|0300-4445566|Available
-D005|Dr. Omar Farooq|Orthopedics|0300-5556677|Available
