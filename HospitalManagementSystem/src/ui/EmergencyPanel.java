@@ -1,13 +1,15 @@
 package ui;
 
 import model.Doctor;
-import model.OPDVisit;
+import model.EmergencyCase;
 import model.Patient;
+import model.WardAdmission;
 import service.DoctorService;
 import service.EmergencyService;
-import service.OPDService;
 import service.PatientService;
+import service.WardService;
 import util.Theme;
+import util.Wards;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -17,34 +19,34 @@ import java.awt.event.ComponentEvent;
 import java.util.List;
 
 /**
- * OPD desk: where a patient walking in for a routine/general check-up is
- * registered. If the doctor decides the case is actually serious, the
- * visit can be referred straight into the Emergency tab from here.
+ * Emergency desk: where a patient in a serious condition is registered.
+ * From here a case can be shifted into a ward bed once a doctor decides
+ * the patient needs to be admitted, or discharged directly if not.
  */
-public class OPDPanel extends JPanel {
+public class EmergencyPanel extends JPanel {
 
     private final PatientService patientService;
     private final DoctorService doctorService;
-    private final OPDService opdService;
     private final EmergencyService emergencyService;
+    private final WardService wardService;
 
     private JTextField nameField;
     private JSpinner ageSpinner;
     private JComboBox<String> genderCombo;
     private JTextField phoneField;
     private JTextField addressField;
+    private JComboBox<String> conditionCombo;
     private JComboBox<DoctorOption> doctorCombo;
-    private JTextField symptomsField;
 
     private JTable table;
     private DefaultTableModel tableModel;
 
-    public OPDPanel(PatientService patientService, DoctorService doctorService,
-                     OPDService opdService, EmergencyService emergencyService) {
+    public EmergencyPanel(PatientService patientService, DoctorService doctorService,
+                           EmergencyService emergencyService, WardService wardService) {
         this.patientService = patientService;
         this.doctorService = doctorService;
-        this.opdService = opdService;
         this.emergencyService = emergencyService;
+        this.wardService = wardService;
 
         setLayout(new BorderLayout(16, 16));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
@@ -53,7 +55,7 @@ public class OPDPanel extends JPanel {
         add(buildFormPanel(), BorderLayout.WEST);
         add(buildTablePanel(), BorderLayout.CENTER);
 
-        refreshTable(opdService.getActiveVisits());
+        refreshTable(emergencyService.getActiveCases());
 
         addComponentListener(new ComponentAdapter() {
             @Override
@@ -69,9 +71,9 @@ public class OPDPanel extends JPanel {
         outer.setPreferredSize(new Dimension(320, 0));
         outer.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
-        JLabel heading = new JLabel("OPD - Register Check-up");
+        JLabel heading = new JLabel("Emergency - Register Case");
         heading.setFont(Theme.FONT_HEADING);
-        heading.setForeground(Theme.TEXT_DARK);
+        heading.setForeground(Theme.DANGER);
         heading.setBorder(BorderFactory.createEmptyBorder(16, 16, 8, 16));
 
         JPanel form = new JPanel();
@@ -84,9 +86,9 @@ public class OPDPanel extends JPanel {
         genderCombo = new JComboBox<>(new String[]{"Male", "Female", "Other"});
         phoneField = new JTextField();
         addressField = new JTextField();
+        conditionCombo = new JComboBox<>(new String[]{"Critical", "Serious", "Stable"});
         doctorCombo = new JComboBox<>();
         reloadDoctorOptions();
-        symptomsField = new JTextField();
 
         form.add(formLabel("Patient Name"));
         form.add(spaced(nameField));
@@ -98,15 +100,15 @@ public class OPDPanel extends JPanel {
         form.add(spaced(phoneField));
         form.add(formLabel("Address"));
         form.add(spaced(addressField));
+        form.add(formLabel("Condition"));
+        form.add(spaced(conditionCombo));
         form.add(formLabel("Attending Doctor"));
         form.add(spaced(doctorCombo));
-        form.add(formLabel("Symptoms / Complaint"));
-        form.add(spaced(symptomsField));
 
-        JButton registerButton = new JButton("Register OPD Visit");
-        Theme.stylePrimaryButton(registerButton);
+        JButton registerButton = new JButton("Register Emergency Case");
+        Theme.styleDangerButton(registerButton);
         registerButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        registerButton.addActionListener(e -> registerVisit());
+        registerButton.addActionListener(e -> registerCase());
 
         form.add(Box.createVerticalStrut(16));
         form.add(rowOf(registerButton));
@@ -122,18 +124,18 @@ public class OPDPanel extends JPanel {
 
         JPanel filterBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         filterBar.setBackground(Theme.BACKGROUND);
-        JButton activeButton = new JButton("Active Visits");
-        JButton allButton = new JButton("All Visits");
+        JButton activeButton = new JButton("Active Cases");
+        JButton allButton = new JButton("All Cases");
         Theme.stylePrimaryButton(activeButton);
         Theme.styleSecondaryButton(allButton);
-        activeButton.addActionListener(e -> refreshTable(opdService.getActiveVisits()));
-        allButton.addActionListener(e -> refreshTable(opdService.getAllVisits()));
+        activeButton.addActionListener(e -> refreshTable(emergencyService.getActiveCases()));
+        allButton.addActionListener(e -> refreshTable(emergencyService.getAllCases()));
         filterBar.add(activeButton);
         filterBar.add(allButton);
 
         tableModel = new DefaultTableModel(
-                new String[]{"OPD ID", "Patient", "Age", "Gender", "Doctor", "Department",
-                        "Symptoms", "Visit Date", "Status"}, 0) {
+                new String[]{"Emergency ID", "Patient", "Age", "Gender", "Condition", "Doctor",
+                        "Department", "Arrival Date", "Arrival Time", "Status"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -148,18 +150,18 @@ public class OPDPanel extends JPanel {
         JScrollPane scrollPane = new JScrollPane(table);
         scrollPane.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
-        JButton dischargeButton = new JButton("Mark as Discharged");
-        Theme.styleAccentButton(dischargeButton);
-        dischargeButton.addActionListener(e -> dischargeSelected());
+        JButton shiftButton = new JButton("Shift to Ward");
+        Theme.styleAccentButton(shiftButton);
+        shiftButton.addActionListener(e -> shiftSelectedToWard());
 
-        JButton referButton = new JButton("Refer to Emergency");
-        Theme.styleDangerButton(referButton);
-        referButton.addActionListener(e -> referSelectedToEmergency());
+        JButton dischargeButton = new JButton("Discharge Directly");
+        Theme.styleSecondaryButton(dischargeButton);
+        dischargeButton.addActionListener(e -> dischargeSelected());
 
         JPanel bottomBar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 8));
         bottomBar.setBackground(Theme.BACKGROUND);
+        bottomBar.add(shiftButton);
         bottomBar.add(dischargeButton);
-        bottomBar.add(referButton);
 
         outer.add(filterBar, BorderLayout.NORTH);
         outer.add(scrollPane, BorderLayout.CENTER);
@@ -167,13 +169,13 @@ public class OPDPanel extends JPanel {
         return outer;
     }
 
-    private void registerVisit() {
+    private void registerCase() {
         String name = nameField.getText().trim();
         String phone = phoneField.getText().trim();
         String address = addressField.getText().trim();
-        String symptoms = symptomsField.getText().trim();
         int age = (Integer) ageSpinner.getValue();
         String gender = (String) genderCombo.getSelectedItem();
+        String condition = (String) conditionCombo.getSelectedItem();
         DoctorOption doctorOption = (DoctorOption) doctorCombo.getSelectedItem();
 
         if (name.isEmpty() || phone.isEmpty()) {
@@ -188,10 +190,10 @@ public class OPDPanel extends JPanel {
         }
 
         Patient patient = patientService.registerOrFindPatient(name, age, gender, phone, address);
-        opdService.registerVisit(patient.getPatientId(), patient.getName(), age, gender,
-                doctorOption.doctor.getName(), doctorOption.doctor.getDepartment(), symptoms);
+        emergencyService.registerCase(patient.getPatientId(), patient.getName(), age, gender,
+                condition, doctorOption.doctor.getName(), doctorOption.doctor.getDepartment());
 
-        JOptionPane.showMessageDialog(this, "OPD visit registered for " + patient.getName()
+        JOptionPane.showMessageDialog(this, "Emergency case registered for " + patient.getName()
                 + " (Patient ID: " + patient.getPatientId() + ").");
 
         nameField.setText("");
@@ -199,54 +201,72 @@ public class OPDPanel extends JPanel {
         genderCombo.setSelectedIndex(0);
         phoneField.setText("");
         addressField.setText("");
-        symptomsField.setText("");
-        refreshTable(opdService.getActiveVisits());
+        conditionCombo.setSelectedIndex(0);
+        refreshTable(emergencyService.getActiveCases());
+    }
+
+    private void shiftSelectedToWard() {
+        String emergencyId = getSelectedEmergencyId();
+        if (emergencyId == null) {
+            return;
+        }
+        EmergencyCase emergencyCase = emergencyService.findById(emergencyId);
+        if (emergencyCase == null || !emergencyCase.getStatus().equals("In Emergency")) {
+            JOptionPane.showMessageDialog(this, "This case has already been closed.",
+                    "Cannot update", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String[] wardNames = Wards.names();
+        String[] wardChoices = new String[wardNames.length];
+        for (int i = 0; i < wardNames.length; i++) {
+            wardChoices[i] = wardNames[i] + "  (" + wardService.availableBeds(wardNames[i]) + " beds free)";
+        }
+
+        String selectedChoice = (String) JOptionPane.showInputDialog(this,
+                "Choose a ward for " + emergencyCase.getPatientName() + ":",
+                "Shift to Ward", JOptionPane.PLAIN_MESSAGE, null, wardChoices, wardChoices[0]);
+        if (selectedChoice == null) {
+            return; // receptionist cancelled
+        }
+        int selectedIndex = java.util.Arrays.asList(wardChoices).indexOf(selectedChoice);
+        String chosenWard = wardNames[selectedIndex];
+
+        WardAdmission admission = wardService.admitPatient(emergencyCase.getPatientId(), emergencyCase.getPatientName(),
+                chosenWard, emergencyCase.getDoctorName(), "Shifted from Emergency (" + emergencyCase.getCondition() + ")");
+
+        if (admission == null) {
+            JOptionPane.showMessageDialog(this, chosenWard + " is full. Please choose a different ward.",
+                    "Ward full", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        emergencyService.updateStatus(emergencyId, "Shifted to Ward");
+        refreshTable(emergencyService.getActiveCases());
+        JOptionPane.showMessageDialog(this, emergencyCase.getPatientName() + " has been admitted to "
+                + chosenWard + ", bed " + admission.getBedNumber() + ". Check the Wards tab.");
     }
 
     private void dischargeSelected() {
-        String opdId = getSelectedOpdId();
-        if (opdId == null) {
+        String emergencyId = getSelectedEmergencyId();
+        if (emergencyId == null) {
             return;
         }
-        OPDVisit visit = opdService.findById(opdId);
-        if (visit == null || !visit.getStatus().equals("Under Treatment")) {
-            JOptionPane.showMessageDialog(this, "This visit has already been closed.",
+        EmergencyCase emergencyCase = emergencyService.findById(emergencyId);
+        if (emergencyCase == null || !emergencyCase.getStatus().equals("In Emergency")) {
+            JOptionPane.showMessageDialog(this, "This case has already been closed.",
                     "Cannot update", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        opdService.updateStatus(opdId, "Discharged");
-        refreshTable(opdService.getActiveVisits());
+        emergencyService.updateStatus(emergencyId, "Discharged");
+        refreshTable(emergencyService.getActiveCases());
     }
 
-    private void referSelectedToEmergency() {
-        String opdId = getSelectedOpdId();
-        if (opdId == null) {
-            return;
-        }
-        OPDVisit visit = opdService.findById(opdId);
-        if (visit == null || !visit.getStatus().equals("Under Treatment")) {
-            JOptionPane.showMessageDialog(this, "This visit has already been closed.",
-                    "Cannot update", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        int choice = JOptionPane.showConfirmDialog(this,
-                "Refer " + visit.getPatientName() + " to the Emergency department?",
-                "Confirm Referral", JOptionPane.YES_NO_OPTION);
-        if (choice != JOptionPane.YES_OPTION) {
-            return;
-        }
-        emergencyService.registerCase(visit.getPatientId(), visit.getPatientName(), visit.getAge(),
-                visit.getGender(), "Serious", visit.getDoctorName(), visit.getDepartment());
-        opdService.updateStatus(opdId, "Referred to Emergency");
-        refreshTable(opdService.getActiveVisits());
-        JOptionPane.showMessageDialog(this, "Patient referred to Emergency. Check the Emergency tab.");
-    }
-
-    private String getSelectedOpdId() {
+    private String getSelectedEmergencyId() {
         int row = table.getSelectedRow();
         if (row == -1) {
-            JOptionPane.showMessageDialog(this, "Select a visit from the table first.",
-                    "No visit selected", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Select a case from the table first.",
+                    "No case selected", JOptionPane.WARNING_MESSAGE);
             return null;
         }
         return (String) tableModel.getValueAt(row, 0);
@@ -269,12 +289,12 @@ public class OPDPanel extends JPanel {
         }
     }
 
-    private void refreshTable(List<OPDVisit> visits) {
+    private void refreshTable(List<EmergencyCase> cases) {
         tableModel.setRowCount(0);
-        for (OPDVisit v : visits) {
+        for (EmergencyCase c : cases) {
             tableModel.addRow(new Object[]{
-                    v.getOpdId(), v.getPatientName(), v.getAge(), v.getGender(), v.getDoctorName(),
-                    v.getDepartment(), v.getSymptoms(), v.getVisitDate(), v.getStatus()
+                    c.getEmergencyId(), c.getPatientName(), c.getAge(), c.getGender(), c.getCondition(),
+                    c.getDoctorName(), c.getDepartment(), c.getArrivalDate(), c.getArrivalTime(), c.getStatus()
             });
         }
     }

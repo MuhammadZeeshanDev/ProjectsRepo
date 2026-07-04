@@ -1,24 +1,24 @@
 package service;
 
-import db.DatabaseManager;
+import java.util.HashMap;
+import java.util.Map;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-
+/**
+ * Very small login check for the reception staff. Accounts are kept in
+ * memory to keep things simple for a semester project - add more
+ * usernames/passwords to the map below if more staff accounts are needed.
+ */
 public class AuthService {
-    public static boolean validateAdmin(String username, String password) {
-        try (Connection conn = DatabaseManager.getConnection()) {
-            String sql = "SELECT * FROM admin WHERE username = ? AND password = ?";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, username);
-            stmt.setString(2, password);
 
-            ResultSet rs = stmt.executeQuery();
-            return rs.next();
-        } catch (Exception e) {
-            e.printStackTrace();
-            return false;
-        }
+    private final Map<String, String> accounts = new HashMap<>();
+
+    public AuthService() {
+        accounts.put("receptionist", "reception123");
+        accounts.put("admin", "admin123");
+    }
+
+    public boolean login(String username, String password) {
+        String storedPassword = accounts.get(username.trim());
+        return storedPassword != null && storedPassword.equals(password);
     }
 }

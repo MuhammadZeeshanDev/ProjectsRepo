@@ -1,94 +1,117 @@
 package service;
 
-import db.DatabaseManager;
+import model.WardAdmission;
+import storage.WardStorage;
+import util.Wards;
 
-import java.sql.*;
-import java.util.HashMap;
-import java.util.Map;
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
+/**
+ * Manages ward beds and admissions. A patient is admitted to a ward
+ * (usually shifted here from Emergency) and automatically given the
+ * next free bed number in that ward. When they are discharged, the bed
+ * becomes free again automatically - bed occupancy is always calculated
+ * from the current list of active admissions rather than a separate
+ * counter, so the two can never get out of sync.
+ */
 public class WardService {
 
-    public static Map<String, int[]> getAllWards() {
-        Map<String, int[]> wardData = new HashMap<>();
+    private final WardStorage storage;
+    private final List<WardAdmission> admissions;
 
-        String sql = "SELECT * FROM wards";
-        try (Connection conn = DatabaseManager.getConnection();
-             Statement stmt = conn.createStatement();
-             ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                String name = rs.getString("name");
-                int total = rs.getInt("total_beds");
-                int occupied = rs.getInt("occupied_beds");
-                wardData.put(name, new int[]{total, occupied});
-            }
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
-
-        return wardData;
+    public WardService() {
+        storage = new WardStorage();
+        admissions = storage.loadAll();
     }
 
-    public static void addOrUpdateWard(String name, int totalBeds) {
-        String checkSql = "SELECT * FROM wards WHERE name = ?";
-        String insertSql = "INSERT INTO wards (name, total_beds, occupied_beds) VALUES (?, ?, 0)";
-        String updateSql = "UPDATE wards SET total_beds = ? WHERE name = ?";
+    public List<WardAdmission> getAllAdmissions() {
+        return admissions;
+    }
 
-        try (Connection conn = DatabaseManager.getConnection();
-             PreparedStatement check = conn.prepareStatement(checkSql)) {
-
-            check.setString(1, name);
-            ResultSet rs = check.executeQuery();
-
-            if (rs.next()) {
-                PreparedStatement update = conn.prepareStatement(updateSql);
-                update.setInt(1, totalBeds);
-                update.setString(2, name);
-                update.executeUpdate();
-            } else {
-                PreparedStatement insert = conn.prepareStatement(insertSql);
-                insert.setString(1, name);
-                insert.setInt(2, totalBeds);
-                insert.executeUpdate();
+    public List<WardAdmission> getActiveAdmissions() {
+        List<WardAdmission> results = new ArrayList<>();
+        for (WardAdmission a : admissions) {
+            if (a.getStatus().equals("Admitted")) {
+                results.add(a);
             }
+        }
+        return results;
+    }
 
-        } catch (SQLException e) {
-            e.printStackTrace();
+    public int occupiedBeds(String wardName) {
+        int count = 0;
+        for (WardAdmission a : admissions) {
+            if (a.getWardName().equals(wardName) && a.getStatus().equals("Admitted")) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int availableBeds(String wardName) {
+        return Wards.capacityOf(wardName) - occupiedBeds(wardName);
+    }
+
+    /**
+     * Admits a patient into the given ward, automatically picking the
+     * first free bed number. Returns null if the ward is completely full.
+     */
+    public WardAdmission admitPatient(String patientId, String patientName, String wardName,
+                                       String doctorName, String notes) {
+        Integer freeBed = findFreeBed(wardName);
+        if (freeBed == null) {
+            return null; // ward is full
+        }
+        String newId = generateNextId();
+        WardAdmission admission = new WardAdmission(newId, patientId, patientName, wardName,
+                freeBed, doctorName, LocalDate.now(), notes, "Admitted");
+        admissions.add(admission);
+        storage.saveAll(admissions);
+        return admission;
+    }
+
+    public void dischargePatient(String admissionId) {
+        for (WardAdmission a : admissions) {
+            if (a.getAdmissionId().equals(admissionId)) {
+                a.setStatus("Discharged");
+                storage.saveAll(admissions);
+                return;
+            }
         }
     }
 
-    public static boolean occupyBed(String wardName) {
-        try (Connection conn = DatabaseManager.getConnection()) {
-            String query = "SELECT total_beds, occupied_beds FROM wards WHERE name = ?";
-            PreparedStatement stmt = conn.prepareStatement(query);
-            stmt.setString(1, wardName);
-            ResultSet rs = stmt.executeQuery();
+    private Integer findFreeBed(String wardName) {
+        int capacity = Wards.capacityOf(wardName);
+        Set<Integer> takenBeds = new HashSet<>();
+        for (WardAdmission a : admissions) {
+            if (a.getWardName().equals(wardName) && a.getStatus().equals("Admitted")) {
+                takenBeds.add(a.getBedNumber());
+            }
+        }
+        for (int bed = 1; bed <= capacity; bed++) {
+            if (!takenBeds.contains(bed)) {
+                return bed;
+            }
+        }
+        return null;
+    }
 
-            if (rs.next()) {
-                int total = rs.getInt("total_beds");
-                int occupied = rs.getInt("occupied_beds");
-                if (occupied < total) {
-                    PreparedStatement update = conn.prepareStatement("UPDATE wards SET occupied_beds = ? WHERE name = ?");
-                    update.setInt(1, occupied + 1);
-                    update.setString(2, wardName);
-                    update.executeUpdate();
-                    return true;
+    private String generateNextId() {
+        int max = 0;
+        for (WardAdmission a : admissions) {
+            try {
+                int number = Integer.parseInt(a.getAdmissionId().replace("W", ""));
+                if (number > max) {
+                    max = number;
                 }
+            } catch (NumberFormatException ignored) {
+                // Skip any ID that does not follow the expected format.
             }
-
-        } catch (SQLException e) {
-            e.printStackTrace();
         }
-        return false;
-    }
-
-    public static void releaseBed(String wardName) {
-        try (Connection conn = DatabaseManager.getConnection()) {
-            String sql = "UPDATE wards SET occupied_beds = occupied_beds - 1 WHERE name = ? AND occupied_beds > 0";
-            PreparedStatement stmt = conn.prepareStatement(sql);
-            stmt.setString(1, wardName);
-            stmt.executeUpdate();
-        } catch (SQLException e) {
-            e.printStackTrace();
-        }
+        return String.format("W%04d", max + 1);
     }
 }

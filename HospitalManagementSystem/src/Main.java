@@ -1,25 +1,26 @@
-import db.DatabaseManager;
 import ui.LoginScreen;
 
 import javax.swing.*;
-import java.awt.*;
 
+/**
+ * Entry point of the Hospital Management System.
+ * Applies a nicer look-and-feel (Nimbus, built into Java) and then
+ * opens the login screen.
+ */
 public class Main {
     public static void main(String[] args) {
         try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            Font font = new Font("Segoe UI", Font.PLAIN, 14);
-            UIManager.put("Label.font", font);
-            UIManager.put("Button.font", font);
-            UIManager.put("TextField.font", font);
-            UIManager.put("ComboBox.font", font);
-            UIManager.put("PasswordField.font", font);
-            UIManager.put("CheckBox.font", font);
-            UIManager.put("Table.font", font);
-            UIManager.put("Table.rowHeight", 22);
-        } catch (Exception ignored) {}
+            for (UIManager.LookAndFeelInfo info : UIManager.getInstalledLookAndFeels()) {
+                if ("Nimbus".equals(info.getName())) {
+                    UIManager.setLookAndFeel(info.getClassName());
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            // If Nimbus isn't available for some reason, the app still runs
+            // fine with the default Java look and feel.
+        }
 
-        DatabaseManager.initialize();
         SwingUtilities.invokeLater(() -> new LoginScreen().setVisible(true));
     }
 }

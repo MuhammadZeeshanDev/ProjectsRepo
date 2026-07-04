@@ -1,7 +1,8 @@
 package ui;
 
-import model.Patient;
-import service.PatientService;
+import model.Doctor;
+import service.DoctorService;
+import util.Departments;
 import util.Theme;
 
 import javax.swing.*;
@@ -10,27 +11,25 @@ import java.awt.*;
 import java.util.List;
 
 /**
- * Screen where the receptionist registers new patients and can search,
- * edit, or remove existing ones. A table on the right shows every
- * patient currently stored in the system.
+ * Screen for managing the hospital's doctors. Every other panel (OPD,
+ * Emergency, Appointments) picks a doctor from this same list, so
+ * keeping it up to date here keeps the rest of the app consistent.
  */
-public class PatientPanel extends JPanel {
+public class DoctorPanel extends JPanel {
 
-    private final PatientService patientService = new PatientService();
+    private final DoctorService doctorService;
 
     private JTextField nameField;
-    private JSpinner ageSpinner;
-    private JComboBox<String> genderCombo;
+    private JComboBox<String> departmentCombo;
     private JTextField phoneField;
-    private JTextField addressField;
-    private JTextField searchField;
+    private JComboBox<String> statusCombo;
 
     private JTable table;
     private DefaultTableModel tableModel;
+    private String selectedDoctorId = null;
 
-    private String selectedPatientId = null; // tracks which row is being edited
-
-    public PatientPanel() {
+    public DoctorPanel(DoctorService doctorService) {
+        this.doctorService = doctorService;
         setLayout(new BorderLayout(16, 16));
         setBorder(BorderFactory.createEmptyBorder(16, 16, 16, 16));
         setBackground(Theme.BACKGROUND);
@@ -38,7 +37,7 @@ public class PatientPanel extends JPanel {
         add(buildFormPanel(), BorderLayout.WEST);
         add(buildTablePanel(), BorderLayout.CENTER);
 
-        refreshTable(patientService.getAllPatients());
+        refreshTable();
     }
 
     private JPanel buildFormPanel() {
@@ -47,7 +46,7 @@ public class PatientPanel extends JPanel {
         outer.setPreferredSize(new Dimension(300, 0));
         outer.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
-        JLabel heading = new JLabel("Register / Edit Patient");
+        JLabel heading = new JLabel("Add / Edit Doctor");
         heading.setFont(Theme.FONT_HEADING);
         heading.setForeground(Theme.TEXT_DARK);
         heading.setBorder(BorderFactory.createEmptyBorder(16, 16, 8, 16));
@@ -58,26 +57,23 @@ public class PatientPanel extends JPanel {
         form.setBorder(BorderFactory.createEmptyBorder(0, 16, 16, 16));
 
         nameField = new JTextField();
-        ageSpinner = new JSpinner(new SpinnerNumberModel(1, 0, 130, 1));
-        genderCombo = new JComboBox<>(new String[]{"Male", "Female", "Other"});
+        departmentCombo = new JComboBox<>(Departments.ALL);
         phoneField = new JTextField();
-        addressField = new JTextField();
+        statusCombo = new JComboBox<>(new String[]{"Available", "On Leave"});
 
-        form.add(formLabel("Full Name"));
+        form.add(formLabel("Doctor Name"));
         form.add(spaced(nameField));
-        form.add(formLabel("Age"));
-        form.add(spaced(ageSpinner));
-        form.add(formLabel("Gender"));
-        form.add(spaced(genderCombo));
+        form.add(formLabel("Department"));
+        form.add(spaced(departmentCombo));
         form.add(formLabel("Phone Number"));
         form.add(spaced(phoneField));
-        form.add(formLabel("Address"));
-        form.add(spaced(addressField));
+        form.add(formLabel("Status"));
+        form.add(spaced(statusCombo));
 
-        JButton saveButton = new JButton("Save Patient");
+        JButton saveButton = new JButton("Save Doctor");
         Theme.stylePrimaryButton(saveButton);
         saveButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        saveButton.addActionListener(e -> saveOrUpdatePatient());
+        saveButton.addActionListener(e -> saveOrUpdateDoctor());
 
         JButton clearButton = new JButton("Clear Form");
         Theme.styleSecondaryButton(clearButton);
@@ -87,7 +83,7 @@ public class PatientPanel extends JPanel {
         JButton deleteButton = new JButton("Delete Selected");
         Theme.styleDangerButton(deleteButton);
         deleteButton.setAlignmentX(Component.LEFT_ALIGNMENT);
-        deleteButton.addActionListener(e -> deleteSelectedPatient());
+        deleteButton.addActionListener(e -> deleteSelectedDoctor());
 
         form.add(Box.createVerticalStrut(16));
         form.add(rowOf(saveButton, clearButton));
@@ -107,34 +103,12 @@ public class PatientPanel extends JPanel {
         JPanel outer = new JPanel(new BorderLayout(0, 10));
         outer.setBackground(Theme.BACKGROUND);
 
-        JPanel searchBar = new JPanel(new BorderLayout(8, 0));
-        searchBar.setBackground(Theme.BACKGROUND);
-
-        searchField = new JTextField();
-        searchField.setFont(Theme.FONT_NORMAL);
-        JButton searchButton = new JButton("Search");
-        Theme.stylePrimaryButton(searchButton);
-        JButton showAllButton = new JButton("Show All");
-        Theme.styleSecondaryButton(showAllButton);
-
-        searchButton.addActionListener(e -> refreshTable(patientService.searchByName(searchField.getText().trim())));
-        showAllButton.addActionListener(e -> {
-            searchField.setText("");
-            refreshTable(patientService.getAllPatients());
-        });
-        searchField.addActionListener(e -> searchButton.doClick());
-
-        JPanel searchButtons = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        searchButtons.setBackground(Theme.BACKGROUND);
-        searchButtons.add(searchButton);
-        searchButtons.add(showAllButton);
-
-        searchBar.add(new JLabel("Search by name or ID:  "), BorderLayout.WEST);
-        searchBar.add(searchField, BorderLayout.CENTER);
-        searchBar.add(searchButtons, BorderLayout.EAST);
+        JLabel heading = new JLabel("All Doctors");
+        heading.setFont(Theme.FONT_HEADING);
+        heading.setForeground(Theme.TEXT_DARK);
 
         tableModel = new DefaultTableModel(
-                new String[]{"Patient ID", "Name", "Age", "Gender", "Phone", "Address", "Registered On"}, 0) {
+                new String[]{"Doctor ID", "Name", "Department", "Phone", "Status"}, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -150,49 +124,47 @@ public class PatientPanel extends JPanel {
         JScrollPane scrollPane = new JScrollPane(table);
         scrollPane.setBorder(BorderFactory.createLineBorder(Theme.BORDER));
 
-        outer.add(searchBar, BorderLayout.NORTH);
+        outer.add(heading, BorderLayout.NORTH);
         outer.add(scrollPane, BorderLayout.CENTER);
         return outer;
     }
 
-    private void saveOrUpdatePatient() {
+    private void saveOrUpdateDoctor() {
         String name = nameField.getText().trim();
+        String department = (String) departmentCombo.getSelectedItem();
         String phone = phoneField.getText().trim();
-        String address = addressField.getText().trim();
-        int age = (int) ageSpinner.getValue();
-        String gender = (String) genderCombo.getSelectedItem();
+        String status = (String) statusCombo.getSelectedItem();
 
         if (name.isEmpty() || phone.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Name and phone number are required.",
+            JOptionPane.showMessageDialog(this, "Doctor name and phone number are required.",
                     "Missing details", JOptionPane.WARNING_MESSAGE);
             return;
         }
 
-        if (selectedPatientId == null) {
-            patientService.registerPatient(name, age, gender, phone, address);
-            JOptionPane.showMessageDialog(this, "Patient registered successfully.");
+        if (selectedDoctorId == null) {
+            doctorService.addDoctor(name, department, phone);
+            JOptionPane.showMessageDialog(this, "Doctor added successfully.");
         } else {
-            patientService.updatePatient(selectedPatientId, name, age, gender, phone, address);
-            JOptionPane.showMessageDialog(this, "Patient details updated.");
+            doctorService.updateDoctor(selectedDoctorId, name, department, phone, status);
+            JOptionPane.showMessageDialog(this, "Doctor details updated.");
         }
 
         clearForm();
-        refreshTable(patientService.getAllPatients());
+        refreshTable();
     }
 
-    private void deleteSelectedPatient() {
-        if (selectedPatientId == null) {
-            JOptionPane.showMessageDialog(this, "Select a patient from the table first.",
-                    "No patient selected", JOptionPane.WARNING_MESSAGE);
+    private void deleteSelectedDoctor() {
+        if (selectedDoctorId == null) {
+            JOptionPane.showMessageDialog(this, "Select a doctor from the table first.",
+                    "No doctor selected", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        int choice = JOptionPane.showConfirmDialog(this,
-                "Delete this patient? This cannot be undone.",
+        int choice = JOptionPane.showConfirmDialog(this, "Remove this doctor from the system?",
                 "Confirm Delete", JOptionPane.YES_NO_OPTION);
         if (choice == JOptionPane.YES_OPTION) {
-            patientService.deletePatient(selectedPatientId);
+            doctorService.deleteDoctor(selectedDoctorId);
             clearForm();
-            refreshTable(patientService.getAllPatients());
+            refreshTable();
         }
     }
 
@@ -201,35 +173,31 @@ public class PatientPanel extends JPanel {
         if (row == -1) {
             return;
         }
-        selectedPatientId = (String) tableModel.getValueAt(row, 0);
+        selectedDoctorId = (String) tableModel.getValueAt(row, 0);
         nameField.setText((String) tableModel.getValueAt(row, 1));
-        ageSpinner.setValue(Integer.parseInt(tableModel.getValueAt(row, 2).toString()));
-        genderCombo.setSelectedItem(tableModel.getValueAt(row, 3));
-        phoneField.setText((String) tableModel.getValueAt(row, 4));
-        addressField.setText((String) tableModel.getValueAt(row, 5));
+        departmentCombo.setSelectedItem(tableModel.getValueAt(row, 2));
+        phoneField.setText((String) tableModel.getValueAt(row, 3));
+        statusCombo.setSelectedItem(tableModel.getValueAt(row, 4));
     }
 
     private void clearForm() {
-        selectedPatientId = null;
+        selectedDoctorId = null;
         nameField.setText("");
-        ageSpinner.setValue(1);
-        genderCombo.setSelectedIndex(0);
+        departmentCombo.setSelectedIndex(0);
         phoneField.setText("");
-        addressField.setText("");
+        statusCombo.setSelectedIndex(0);
         table.clearSelection();
     }
 
-    private void refreshTable(List<Patient> patients) {
+    private void refreshTable() {
         tableModel.setRowCount(0);
-        for (Patient p : patients) {
+        List<Doctor> doctors = doctorService.getAllDoctors();
+        for (Doctor d : doctors) {
             tableModel.addRow(new Object[]{
-                    p.getPatientId(), p.getName(), p.getAge(), p.getGender(),
-                    p.getPhone(), p.getAddress(), p.getRegistrationDate()
+                    d.getDoctorId(), d.getName(), d.getDepartment(), d.getPhone(), d.getStatus()
             });
         }
     }
-
-    // ----- small layout helpers -----
 
     private JLabel formLabel(String text) {
         JLabel label = new JLabel(text);
