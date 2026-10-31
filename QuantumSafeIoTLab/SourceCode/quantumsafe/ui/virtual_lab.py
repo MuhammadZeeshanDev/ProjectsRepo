@@ -1,4 +1,5 @@
-"""Local loopback gateway lab and legacy simulated scenarios."""
+"""Virtual gateway controls and live monitoring of loopback HTTP events."""
+from datetime import datetime, timezone
 import pandas as pd
 import streamlit as st
 from ..virtual_gateway_sim import SCENARIOS, evaluate
@@ -8,39 +9,79 @@ from ..virtual_network import VirtualGateway
 def get_gateway():
     return VirtualGateway()
 
+
+def _event_frame(gateway):
+    with gateway.lock:
+        snapshot = list(gateway.events)
+    return pd.DataFrame(snapshot, columns=['timestamp_utc', 'device', 'decision', 'reason', 'source', 'request_type'])
+
+
+@st.fragment(run_every='3s')
+def live_monitor(gateway):
+    st.subheader('📊 Live monitoring · refresh every 3 seconds')
+    df = _event_frame(gateway)
+    allow = int((df['decision'] == 'ALLOW').sum()) if not df.empty else 0
+    blocked = int((df['decision'] == 'BLOCK').sum()) if not df.empty else 0
+    a, b, c, d = st.columns(4)
+    a.metric('HTTP events (last 200)', len(df))
+    b.metric('Allowed', allow)
+    c.metric('Blocked / alerts', blocked)
+    d.metric('Unique device IDs seen', int(df['device'].nunique()) if not df.empty else 0)
+    if df.empty:
+        st.info('No HTTP events yet. Start the gateway and send a request. Monitoring updates automatically.')
+        return
+    st.caption('Counts cover the last 200 events in memory, not the whole network or all-time totals.')
+    chart = df['decision'].value_counts().reindex(['ALLOW', 'BLOCK'], fill_value=0)
+    st.bar_chart(chart)
+    st.subheader('📷 Virtual device activity')
+    devices = df[df['device'].astype(str).str.len() > 0].copy()
+    if not devices.empty:
+        latest = devices.drop_duplicates('device', keep='first')[['device', 'timestamp_utc', 'decision']].copy()
+        latest.columns = ['Device ID', 'Last seen (UTC)', 'Last decision']
+        st.dataframe(latest, hide_index=True, use_container_width=True)
+    st.caption('Last seen means a request was observed; it does NOT mean the device is currently connected.')
+    st.subheader('🚨 Security alerts')
+    alerts = df[df['decision'] == 'BLOCK']
+    if alerts.empty:
+        st.success('No blocked requests in the current event window.')
+    else:
+        st.dataframe(alerts[['timestamp_utc', 'device', 'reason']], hide_index=True, use_container_width=True)
+    st.subheader('📝 Recent HTTP events')
+    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.download_button('⬇️ Export events CSV', df.to_csv(index=False).encode('utf-8'),
+                       file_name='quantumsafe_virtual_events.csv', mime='text/csv', key='export_live_http_events')
+
+
 def show(actor):
-    st.title('🧩 Virtual IoT Security Gateway')
-    st.info('LOCAL LAB: Virtual clients send real HTTP requests to 127.0.0.1. No external devices, packet sniffing, ML or network-wide blocking.')
+    st.title('🧩 Virtual IoT Security Gateway · v0.2.4')
+    st.info('LOCAL TEST LAB: HTTP requests to 127.0.0.1 only. This is not real router/CCTV packet monitoring or ML-based intrusion detection.')
     gateway = get_gateway()
-    c1,c2 = st.columns(2)
-    if c1.button('🟢 Start local gateway',disabled=bool(gateway.server)):
-        gateway.start()
-    if c2.button('🔴 Stop local gateway',disabled=not bool(gateway.server)):
+    c1, c2 = st.columns(2)
+    if c1.button('🟢 Start local gateway', disabled=bool(gateway.server)):
+        try:
+            gateway.start()
+            st.success('Local HTTP gateway started.')
+        except Exception as exc:
+            st.error(f'Gateway could not start: {exc}')
+    if c2.button('🔴 Stop local gateway', disabled=not bool(gateway.server)):
         gateway.stop()
-    st.metric('Local gateway',f'127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
-    st.subheader('🌐 Send real local HTTP request')
-    scenario = st.selectbox('Virtual client / test', ['CCTV','Router','Sensor','Unauthorized access','Tampered message','Replay attack','Rate limit'])
-    if st.button('▶️ Send request',type='primary',disabled=not bool(gateway.server)):
+        st.warning('Local HTTP gateway stopped.')
+    st.metric('Gateway status', f'Running on 127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
+    st.subheader('🌐 Send a virtual device request')
+    scenario = st.selectbox('Virtual client / test',
+        ['CCTV', 'Router', 'Sensor', 'Unauthorized access', 'Tampered message', 'Replay attack', 'Rate limit'])
+    if st.button('▶️ Send request', type='primary', disabled=not bool(gateway.server)):
         try:
             event = gateway.send(scenario)
-            (st.success if event['decision']=='ALLOW' else st.error)(f"{event['decision']} — {event['reason']}")
+            message = f"{event['decision']} — {event['reason']}"
+            (st.success if event['decision'] == 'ALLOW' else st.error)(message)
         except Exception as exc:
             st.error(f'Local request failed: {exc}')
-    st.caption('Replay and rate-limit tests send multiple HTTP requests. Rate limits reset after 10 seconds; restart gateway to reset counters.')
-    events = list(gateway.events)
-    a,b,c=st.columns(3)
-    a.metric('HTTP events',len(events))
-    b.metric('Allowed',sum(e['decision']=='ALLOW' for e in events))
-    c.metric('Blocked',sum(e['decision']=='BLOCK' for e in events))
-    if events:
-        df = pd.DataFrame(events)
-        st.bar_chart(df['decision'].value_counts().reindex(['ALLOW','BLOCK'],fill_value=0))
-        st.dataframe(df,hide_index=True,use_container_width=True)
-        st.download_button('⬇️ Export HTTP event CSV',df.to_csv(index=False).encode(),'virtual_http_events.csv','text/csv')
+    st.caption('Replay and rate-limit tests may generate multiple events. Rate-limit window is 10 seconds.')
+    live_monitor(gateway)
     st.divider()
     with st.expander('Older offline policy simulation (v0.2.2)'):
-        old = st.selectbox('Offline scenario',list(SCENARIOS))
+        old = st.selectbox('Offline scenario', list(SCENARIOS))
         if st.button('Run offline simulation'):
-            result=evaluate(old)
-            st.json(result)
-    st.warning('Security scope: This is a localhost training gateway. It does not inspect CCTV video, router packets, or prevent attacks elsewhere on the computer/network.')
+            st.json(evaluate(old))
+    st.warning('Monitoring covers only this app’s local HTTP test gateway. Events are in memory (max 200) and reset when the Streamlit server process restarts. No SQL persistence, packet sniffing, or automatic network firewall is included.')

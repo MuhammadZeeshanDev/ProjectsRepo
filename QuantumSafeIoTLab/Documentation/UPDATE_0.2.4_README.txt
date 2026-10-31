@@ -1,0 +1,23 @@
+QuantumSafe Update 0.2.4 — Local Gateway Live Monitoring
+
+WHAT CHANGES
+- Fixes app title/sidebar label from 0.2.2 to 0.2.4.
+- Adds automatic 3-second refresh of the local gateway event dashboard.
+- Shows last 200 HTTP requests, allow/block counts, blocked-event alerts, and virtual device last-seen table.
+- CSV export. No SQL migrations or dependency changes.
+
+LIMITATIONS
+- Events are in memory, capped at 200 and lost on server restart.
+- Last-seen is not proof of an active device connection.
+- The gateway is loopback HTTP only; not a real network firewall, packet sniffer, or ML IDS.
+- Requires Streamlit with st.fragment support (your V2 has Streamlit 1.66.1).
+
+INSTALL
+1. Stop Streamlit (Ctrl+C in its terminal).
+2. Put this ZIP, without extracting, in QuantumSafeIoTLab\Updates; remove old ZIPs from that folder.
+3. Double-click UPDATE_APP.bat and type YES.
+4. Restart with START_MAIN_APP.bat; open Virtual Gateway.
+5. Start local gateway, send CCTV (ALLOW) and Unauthorized access (BLOCK).
+6. Watch the dashboard refresh and export CSV.
+
+Your existing updater only allows SourceCode/, Tests/, Documentation/, Assets/; this update respects those restrictions.
