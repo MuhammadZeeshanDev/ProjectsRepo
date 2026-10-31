@@ -1,0 +1,11 @@
+QuantumSafe v0.3.0 — Dataset Manager + Model Registry
+
+INSTALL: Stop Streamlit. Put this ZIP (unextracted) as the ONLY ZIP in Updates. Run UPDATE_APP.bat and confirm. Restart application.
+
+NEW: ML Lab sidebar, CSV/ZIP preview with missing/duplicate/class stats (first 10,000 rows), downloadable quality report, persistent local model registry with SHA256. Model files stored in ML_Artifacts, separate from application code.
+
+IMPORTANT: Edge-IIOTSET.ipynb is notebook SOURCE, not an exported trained checkpoint. The notebook includes training checkpoint export code; the actual .joblib files must be exported from Colab/Drive. No model has been imported or validated automatically. No pickle/joblib execution. No ML inference/training or gateway integration yet. This release does NOT alter research findings.
+
+Existing virtual gateway, SQL history, and other screens are retained. The model registry is local SQLite metadata; existing gateway history remains in SQL Server. Upload cap 60MB; use smaller CSV samples for large research datasets.
+
+Dependencies: Streamlit and pandas (already used in existing app).

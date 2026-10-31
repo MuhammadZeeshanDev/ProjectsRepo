@@ -1,0 +1,11 @@
+{
+  "notebook": "Edge-IIOTSET.ipynb",
+  "cells": 207,
+  "dataset": "Edge-IIoTset",
+  "observed": "Notebook code includes RF, XGBoost, LightGBM, SA-HFS, checkpoint saving; not equivalent to checkpoint files.",
+  "notebook_cells_with_checkpoint_export": [
+    197,
+    202
+  ],
+  "warning": "No trained checkpoint files were attached; results and inference not verified."
+}

@@ -4,10 +4,10 @@ from quantumsafe import users
 from quantumsafe.permissions import may_run, may_manage_users
 from quantumsafe.ui import (
     login, dashboard, demo, benchmark_page, results, admin_page,
-    lan_page, test_center, virtual_lab
+    lan_page, test_center, virtual_lab, ml_lab
 )
 
-st.set_page_config(page_title='QuantumSafe IoT Lab v0.2.5', page_icon='🔐',
+st.set_page_config(page_title='QuantumSafe IoT Lab v0.3.0', page_icon='🔐',
                    layout='wide', initial_sidebar_state='expanded')
 
 actor_id = st.session_state.get('actor_id')
@@ -22,11 +22,11 @@ except Exception:
     st.warning('Please sign in again. Your session may have expired.')
     st.stop()
 
-st.sidebar.title('🔐 QuantumSafe v0.2.5')
+st.sidebar.title('🔐 QuantumSafe v0.3.0')
 st.sidebar.caption(f"{actor['Username']} · {actor['RoleName']}")
 options = ['🏠 Dashboard']
 if may_run(actor['RoleName']):
-    options += ['🔒 Secure Demo', '🌐 LAN Lab', '🧩 Virtual Gateway', '⚡ Run Benchmark', '🧪 Test Center']
+    options += ['🔒 Secure Demo', '🌐 LAN Lab', '🧩 Virtual Gateway', '🤖 ML Lab', '⚡ Run Benchmark', '🧪 Test Center']
 options += ['📊 Results']
 if may_manage_users(actor['RoleName']):
     options += ['👥 Users']
@@ -35,7 +35,7 @@ if st.sidebar.button('🚪 Log out'):
     st.session_state.clear()
     st.rerun()
 st.sidebar.divider()
-st.sidebar.caption('Local HTTP virtual gateway with SQL-backed security event monitoring. No packet capture or ML IDS yet.')
+st.sidebar.caption('Local HTTP virtual gateway with SQL-backed security event monitoring. ML model registry and dataset profiling; no live ML IDS yet.')
 
 if page == '🏠 Dashboard':
     dashboard.show(actor)
@@ -45,6 +45,8 @@ elif page == '🌐 LAN Lab':
     lan_page.show(actor)
 elif page == '🧩 Virtual Gateway':
     virtual_lab.show(actor)
+elif page == '🤖 ML Lab':
+    ml_lab.show(actor)
 elif page == '⚡ Run Benchmark':
     benchmark_page.show(actor)
 elif page == '🧪 Test Center':
