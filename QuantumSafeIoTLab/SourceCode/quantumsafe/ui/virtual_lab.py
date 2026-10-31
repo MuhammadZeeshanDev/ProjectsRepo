@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from ..virtual_gateway_sim import SCENARIOS, evaluate
 from ..virtual_network import VirtualGateway
+from .. import gateway_event_store as sql_store
 
 @st.cache_resource
 def get_gateway():
@@ -53,9 +54,29 @@ def live_monitor(gateway):
 
 
 def show(actor):
-    st.title('🧩 Virtual IoT Security Gateway · v0.2.4')
+    st.title('🧩 Virtual IoT Security Gateway · v0.2.5')
     st.info('LOCAL TEST LAB: HTTP requests to 127.0.0.1 only. This is not real router/CCTV packet monitoring or ML-based intrusion detection.')
     gateway = get_gateway()
+    st.subheader('🗄️ SQL Server event storage')
+    try:
+        ready = sql_store.is_initialized()
+    except Exception as exc:
+        ready = False
+        st.error(f'SQL Server unavailable: {type(exc).__name__}: {exc}')
+    if ready:
+        gateway.event_sink = sql_store.insert_event
+        st.success('SQL persistence enabled. New HTTP events are saved to SQL Server.')
+    else:
+        gateway.event_sink = None
+        st.warning('SQL event table is not initialized. Gateway still works in memory.')
+        if st.button('🗄️ Initialize SQL event table (one time)'):
+            try:
+                sql_store.initialize()
+                gateway.event_sink = sql_store.insert_event
+                st.success('SQL event table initialized. Persistence enabled.')
+                st.rerun()
+            except Exception as exc:
+                st.error(f'Could not initialize SQL table: {type(exc).__name__}: {exc}')
     c1, c2 = st.columns(2)
     if c1.button('🟢 Start local gateway', disabled=bool(gateway.server)):
         try:
@@ -78,10 +99,34 @@ def show(actor):
         except Exception as exc:
             st.error(f'Local request failed: {exc}')
     st.caption('Replay and rate-limit tests may generate multiple events. Rate-limit window is 10 seconds.')
+    if gateway.last_persist_error:
+        st.error('Last SQL event save failed: ' + gateway.last_persist_error)
     live_monitor(gateway)
+    st.divider()
+    st.subheader('📚 Persistent SQL Server event history')
+    if ready:
+        try:
+            counts = sql_store.counts()
+            c_a, c_b, c_c = st.columns(3)
+            c_a.metric('All-time SQL events', counts['total'])
+            c_b.metric('All-time allowed', counts['allowed'])
+            c_c.metric('All-time blocked', counts['blocked'])
+            limit = st.selectbox('SQL history rows to load', [100, 500, 1000, 5000], index=1)
+            history = pd.DataFrame(sql_store.recent_events(limit))
+            if history.empty:
+                st.info('No SQL events saved yet. Send a virtual device request.')
+            else:
+                st.dataframe(history, hide_index=True, use_container_width=True)
+                st.bar_chart(history.groupby(['device', 'decision']).size().unstack(fill_value=0))
+                st.download_button('⬇️ Export SQL history CSV', history.to_csv(index=False).encode('utf-8'),
+                                   file_name='quantumsafe_sql_events.csv', mime='text/csv', key='export_sql_events')
+        except Exception as exc:
+            st.error(f'Unable to load SQL history: {type(exc).__name__}: {exc}')
+    else:
+        st.info('Initialize the SQL event table to enable permanent event history.')
     st.divider()
     with st.expander('Older offline policy simulation (v0.2.2)'):
         old = st.selectbox('Offline scenario', list(SCENARIOS))
         if st.button('Run offline simulation'):
             st.json(evaluate(old))
-    st.warning('Monitoring covers only this app’s local HTTP test gateway. Events are in memory (max 200) and reset when the Streamlit server process restarts. No SQL persistence, packet sniffing, or automatic network firewall is included.')
+    st.warning('Monitoring covers only this app’s local HTTP test gateway. Live panel uses last 200 in-memory events. SQL history survives restart when enabled. No packet sniffing, ML IDS, or network-wide firewall is included.')

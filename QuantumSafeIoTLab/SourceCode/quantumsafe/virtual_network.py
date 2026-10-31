@@ -22,6 +22,8 @@ class VirtualGateway:
         self.server = None
         self.thread = None
         self.port = None
+        self.event_sink = None  # optional SQL writer; called after in-memory event append
+        self.last_persist_error = None
 
     def start(self):
         if self.server:
@@ -99,6 +101,15 @@ class VirtualGateway:
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
                      'request_type':'telemetry'}
             self.events.appendleft(event)
+        # Never hold the gateway lock while performing database I/O.
+        # A failed DB write does not change the gateway's security decision.
+        sink = self.event_sink
+        if sink is not None:
+            try:
+                sink(event)
+                self.last_persist_error = None
+            except Exception as exc:
+                self.last_persist_error = f'{type(exc).__name__}: {exc}'
         return event
 
     def send(self, scenario):

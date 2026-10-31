@@ -1,0 +1,24 @@
+QuantumSafe v0.2.5 — SQL Server Virtual Gateway Event History
+
+Install using the existing UPDATE_APP.bat (exactly one ZIP in Updates folder).
+Stop Streamlit before applying; restart after successful update.
+
+Open Virtual Gateway. Press 'Initialize SQL event table (one time)' if needed.
+The application creates dbo.VirtualGatewayEvents in the EXISTING configured SQL database.
+Your SQL account must have CREATE TABLE permission for first-time setup and
+INSERT/SELECT afterward. Existing tables are not modified or deleted.
+
+The updater installs application files ONLY; it does not execute SQL migrations.
+Initialization is explicit, idempotent, and happens only when you click the button.
+
+After enabling persistence, send CCTV (ALLOW), Unauthorized (BLOCK), and restart
+Streamlit. Check Persistent SQL Server event history for the saved rows.
+
+LIMITATIONS:
+- Events from before 0.2.5 are NOT migrated from memory to SQL.
+- Only requests received by this local HTTP gateway are logged.
+- Live dashboard still shows max 200 in-memory events; SQL history is separate.
+- SQL writes are best effort; gateway decisions continue even if SQL fails.
+- If SQL fails, an error appears on the gateway page; failed events are not retried.
+- The event table is not a labeled ML training dataset.
+- SQL Server connection must already work in this project.
