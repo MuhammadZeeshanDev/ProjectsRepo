@@ -1,0 +1,5 @@
+# ONLY for Computer B. SQL Server, pyodbc and admin setup are NOT required.
+streamlit>=1.40,<2
+pqcrypto==1.0.0
+cryptography>=43,<48
+pandas>=2.2,<4

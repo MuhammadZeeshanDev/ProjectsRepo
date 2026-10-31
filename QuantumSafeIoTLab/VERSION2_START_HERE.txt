@@ -1,0 +1,36 @@
+QuantumSafe IoT Lab — VERSION 2 / v0.2
+========================================
+YOU ALREADY HAVE v0.1 WORKING? GOOD! DO NOT DELETE THE OLD DATABASE.
+
+COMPUTER A (main app, SQL Server):
+ 1. Extract this version 2 ZIP to a NEW folder and open it in VS Code.
+ 2. Copy your working .env FROM your old v0.1 folder INTO this new
+    QuantumSafeIoTLab folder. Do NOT share the .env with other computers.
+ 3. In SSMS on ZEESHAN\SQLEXPRESS, run Database/02_upgrade_v02.sql ONCE.
+    It only ADDS a SecurityEvents table; existing data remain unchanged.
+ 4. VS Code terminal, inside the folder with requirements.txt:
+    py -3.12 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -r requirements.txt
+    python SourceCode/check_system.py
+    python -m streamlit run SourceCode/app.py --server.address 127.0.0.1
+ 5. Open http://localhost:8501 and sign in with your EXISTING admin.
+    Do not recreate admin user.
+ 6. In the sidebar see: Dashboard, Secure Demo, LAN Lab, Run Benchmark,
+    Test Center, Results, Users. Use the big TEST / START / STOP buttons.
+
+TWO-COMPUTER DEMO, ONLY ON YOUR OWN TRUSTED PRIVATE NETWORK:
+ A: LAN Lab -> Generate Secret -> tick Allow LAN -> Start Gateway, port 8765.
+ B: Install Python 3.12 and requirements_peer.txt on the second PC:
+    py -3.12 -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    python -m pip install -r requirements_peer.txt
+    python -m streamlit run SourceCode/peer_console.py --server.address 127.0.0.1 --server.port 8502
+ B: Open localhost:8502, enter computer A's PRIVATE IP, port, copied secret,
+    and click Check Gateway / Normal / Tamper / Replay / Unauthorized /
+    Key-Swap / Run ALL tests.
+ A: LAN Lab -> Security events -> Refresh to see SQL Server event records.
+ A: STOP the gateway when finished; no public internet or port forwarding.
+
+NOTE: THIS IS NOT AN IDS. It cannot detect all new/unknown attacks.
+No ESP32 or battery measurements. Read README.md for fuller details.
