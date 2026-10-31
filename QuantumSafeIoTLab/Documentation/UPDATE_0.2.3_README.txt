@@ -1,0 +1,7 @@
+QuantumSafe 0.2.3 - LOCAL HTTP virtual gateway
+
+Real HTTP requests over 127.0.0.1 only, with signed telemetry, token auth, replay and rate checks.
+No physical IoT, live packet capture, ML, firewall or SQL changes.
+No dependencies added.
+
+Launcher note: Existing START_MAIN_APP.bat incorrectly expects .venv inside project; actual environment is in parent. Updater intentionally disallows .bat files. Use one-time launcher repair below after applying this update.

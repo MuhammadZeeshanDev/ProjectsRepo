@@ -1,43 +1,46 @@
-"""Streamlit demonstration of a virtual gateway, no live network interception."""
+"""Local loopback gateway lab and legacy simulated scenarios."""
 import pandas as pd
 import streamlit as st
 from ..virtual_gateway_sim import SCENARIOS, evaluate
+from ..virtual_network import VirtualGateway
 
+@st.cache_resource
+def get_gateway():
+    return VirtualGateway()
 
 def show(actor):
     st.title('🧩 Virtual IoT Security Gateway')
-    st.warning('SIMULATION ONLY: No real packets are captured, routed or blocked. '
-               'No ML attack classifier is connected yet. Decisions below are rule-based examples.')
-    st.write('Virtual CCTV, router and sensor send simulated events to a gateway policy checker.')
-    scenario = st.selectbox('Choose a test', list(SCENARIOS))
-    if 'qs_virtual_events' not in st.session_state:
-        st.session_state.qs_virtual_events = []
-    a, b = st.columns(2)
-    if a.button('▶️ Run virtual test', type='primary'):
-        event = evaluate(scenario)
-        st.session_state.qs_virtual_events.insert(0, event)
-        st.session_state.qs_virtual_events = st.session_state.qs_virtual_events[:100]
-        if event['decision'] == 'BLOCK':
-            st.error(f"🔴 Simulated BLOCK — {event['reason']}")
-        else:
-            st.success('🟢 Simulated ALLOW — policy checks passed')
-    if b.button('🧹 Clear simulated events'):
-        st.session_state.qs_virtual_events = []
-    events = st.session_state.qs_virtual_events
-    c1, c2, c3 = st.columns(3)
-    c1.metric('Simulated events', len(events))
-    c2.metric('Allowed', sum(x['decision'] == 'ALLOW' for x in events))
-    c3.metric('Blocked', sum(x['decision'] == 'BLOCK' for x in events))
+    st.info('LOCAL LAB: Virtual clients send real HTTP requests to 127.0.0.1. No external devices, packet sniffing, ML or network-wide blocking.')
+    gateway = get_gateway()
+    c1,c2 = st.columns(2)
+    if c1.button('🟢 Start local gateway',disabled=bool(gateway.server)):
+        gateway.start()
+    if c2.button('🔴 Stop local gateway',disabled=not bool(gateway.server)):
+        gateway.stop()
+    st.metric('Local gateway',f'127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
+    st.subheader('🌐 Send real local HTTP request')
+    scenario = st.selectbox('Virtual client / test', ['CCTV','Router','Sensor','Unauthorized access','Tampered message','Replay attack','Rate limit'])
+    if st.button('▶️ Send request',type='primary',disabled=not bool(gateway.server)):
+        try:
+            event = gateway.send(scenario)
+            (st.success if event['decision']=='ALLOW' else st.error)(f"{event['decision']} — {event['reason']}")
+        except Exception as exc:
+            st.error(f'Local request failed: {exc}')
+    st.caption('Replay and rate-limit tests send multiple HTTP requests. Rate limits reset after 10 seconds; restart gateway to reset counters.')
+    events = list(gateway.events)
+    a,b,c=st.columns(3)
+    a.metric('HTTP events',len(events))
+    b.metric('Allowed',sum(e['decision']=='ALLOW' for e in events))
+    c.metric('Blocked',sum(e['decision']=='BLOCK' for e in events))
     if events:
         df = pd.DataFrame(events)
-        st.subheader('📊 Gateway decisions')
-        counts = df['decision'].value_counts().reindex(['ALLOW', 'BLOCK'], fill_value=0)
-        st.bar_chart(counts)
-        st.subheader('📋 Simulated security log')
-        st.dataframe(df, hide_index=True, use_container_width=True)
-        st.download_button('⬇️ Export simulation CSV', df.to_csv(index=False).encode('utf-8'),
-                           'virtual_gateway_simulation.csv', 'text/csv')
-    else:
-        st.info('Select a scenario and click Run virtual test to see a decision and graph.')
-    st.caption('Next phase: isolated virtual network gateway, real traffic collection, '
-               'and validated RF/XGBoost/LightGBM models. This page is a safe first UI prototype.')
+        st.bar_chart(df['decision'].value_counts().reindex(['ALLOW','BLOCK'],fill_value=0))
+        st.dataframe(df,hide_index=True,use_container_width=True)
+        st.download_button('⬇️ Export HTTP event CSV',df.to_csv(index=False).encode(),'virtual_http_events.csv','text/csv')
+    st.divider()
+    with st.expander('Older offline policy simulation (v0.2.2)'):
+        old = st.selectbox('Offline scenario',list(SCENARIOS))
+        if st.button('Run offline simulation'):
+            result=evaluate(old)
+            st.json(result)
+    st.warning('Security scope: This is a localhost training gateway. It does not inspect CCTV video, router packets, or prevent attacks elsewhere on the computer/network.')
