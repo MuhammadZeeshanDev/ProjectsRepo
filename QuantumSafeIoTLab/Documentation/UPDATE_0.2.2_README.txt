@@ -1,0 +1,18 @@
+QuantumSafe IoT Lab - Update 0.2.2
+
+Adds a new sidebar page: Virtual Gateway.
+
+This is an OFFLINE policy simulation: it does not monitor or block real network traffic, and does not run machine learning.
+
+Installation:
+1. Make a separate backup of the working project.
+2. Stop Streamlit and any peer console.
+3. Remove old ZIPs from the project's Updates folder.
+4. Put this ZIP (unextracted) in Updates.
+5. Double-click UPDATE_APP.bat and type YES.
+6. Start the app as usual and open Virtual Gateway.
+7. Run each of the five scenarios; check the graph and export CSV.
+
+No database changes or new Python dependencies are required.
+The existing updater backs up overwritten app files in Backups.
+It does not perform full automatic post-install validation.
