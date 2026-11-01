@@ -7,6 +7,7 @@ from ..virtual_network import VirtualGateway
 from .. import gateway_event_store as sql_store
 from ..message_policy import assess_content
 from ..security_alerts import event_identity, alarm_eligible, next_alarm_event
+from ..device_connections import connection_rows, unknown_attempts
 import base64, io, math, struct, wave
 import streamlit.components.v1 as components
 
@@ -43,6 +44,13 @@ def live_monitor(gateway):
     st.caption('Counts cover the last 200 events in memory, not the whole network or all-time totals.')
     chart = df['decision'].value_counts().reindex(['ALLOW', 'BLOCK'], fill_value=0)
     st.bar_chart(chart)
+    st.subheader('🔌 Device connection observations')
+    st.caption('ACTIVE means a valid gateway request was observed within 30 seconds, not a persistent socket or physical IoT connection.')
+    st.dataframe(pd.DataFrame(connection_rows(snapshot_events(gateway), gateway.registered_devices)), hide_index=True, use_container_width=True)
+    unknown = unknown_attempts(snapshot_events(gateway), gateway.registered_devices)
+    if unknown:
+        st.warning(f'{len(unknown)} request(s) claimed an unregistered device identity in the recent event window. This is not proof of a malicious IP.')
+        st.dataframe(pd.DataFrame(unknown).reindex(columns=['timestamp_utc','device','source_ip','decision','reason']), hide_index=True, use_container_width=True)
     st.subheader('📷 Virtual device activity')
     devices = df[df['device'].astype(str).str.len() > 0].copy()
     if not devices.empty:
@@ -207,6 +215,7 @@ def show(actor):
     st.subheader('📡 Registered virtual devices')
     st.dataframe(pd.DataFrame([{'Device ID':k,'Device':v,'Connection':'Virtual / registered','KEM capability':'Enabled in lab'} for k,v in gateway.registered_devices.items()]),hide_index=True,use_container_width=True)
     st.caption('Registered means configured in this virtual gateway; not proof of a physical connection. KEM capability is a lab assumption, not a completed handshake.')
+    st.info('Connection check: use a trusted device test to generate valid telemetry. ACTIVE (observed) lasts 30 seconds; then it becomes IDLE. Invalid PC B requests never count as a successful connection.')
     if actor['RoleName']=='Admin':
         st.subheader('🔐 Test ML-KEM on every virtual device')
         if st.button('Run secure connection checks (all devices)'):
