@@ -45,10 +45,13 @@ def live_monitor(gateway):
         st.dataframe(latest, hide_index=True, use_container_width=True)
     st.caption('Last seen means a request was observed; it does NOT mean the device is currently connected.')
     st.subheader('🚨 Security alerts')
+    st.caption('To enable audible alerts, click Enable sound & notifications once. Some browsers block automatic playback or embedded notifications.')
     alerts = df[df['decision'] == 'BLOCK']
     if alerts.empty:
         st.success('No blocked requests in the current event window.')
     else:
+        latest = alerts.iloc[0]
+        components.html(_alarm_html(str(latest['timestamp_utc']) + str(latest['device']) + str(latest['reason'])), height=85)
         st.dataframe(alerts[['timestamp_utc', 'device', 'reason', 'source']], hide_index=True, use_container_width=True)
     st.subheader('📝 Recent HTTP events')
     st.dataframe(df, hide_index=True, use_container_width=True)
@@ -58,22 +61,44 @@ def live_monitor(gateway):
 
 
 
-def _alarm_html():
-    """Generate a short local WAV; audio playback requires browser permission."""
-    rate=16000
-    samples=[]
-    for i in range(int(rate*.65)):
-        tone=0.35*math.sin(2*math.pi*880*i/rate) if (i//2400)%2==0 else 0
-        samples.append(struct.pack('<h',int(32767*tone)))
-    out=io.BytesIO()
-    with wave.open(out,'wb') as w:
-        w.setnchannels(1);w.setsampwidth(2);w.setframerate(rate);w.writeframes(b''.join(samples))
-    audio=base64.b64encode(out.getvalue()).decode('ascii')
-    return f'<audio controls autoplay><source src="data:audio/wav;base64,{audio}" type="audio/wav"></audio>'
+def _alarm_html(event_key):
+    """Client-side audio/notification; browser requires user gesture to unlock sound."""
+    import json
+    key = json.dumps(str(event_key))
+    return """<div style='font-family:sans-serif'>
+    <button id='enable'>🔔 Enable sound & notifications</button>
+    <button id='play'>🔊 Test alarm</button>
+    <span id='status' style='font-size:12px'>Browser permission may be required.</span>
+    </div><script>
+    const eventKey=KEY;
+    const status=document.getElementById('status');
+    function alarm(){
+      try { const C=window.AudioContext||window.webkitAudioContext; const c=new C();
+        c.resume().then(()=>{for(let i=0;i<4;i++){
+          const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+i*0.23;
+          o.type='square';o.frequency.value=(i%2?1250:950);
+          g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.13,t+0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001,t+0.19);
+          o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+0.2);
+        }});
+      } catch(e){status.textContent='Audio unavailable: '+e.message;}
+    }
+    document.getElementById('play').onclick=alarm;
+    document.getElementById('enable').onclick=async()=>{
+      alarm();if('Notification' in window){try {await Notification.requestPermission();}catch(e){}}
+      status.textContent='Sound test played. Keep browser tab open; auto-play depends on browser settings.';
+    };
+    if(eventKey && eventKey!=='none'){
+      alarm();
+      if('Notification' in window && Notification.permission==='granted'){
+        try{new Notification('QuantumSafe: blocked request',{body:'Security event detected. Open PC A alerts.'});}catch(e){}
+      }
+    }
+    </script>""".replace('KEY',key)
 
 def message_test(gateway):
-    st.subheader('🚨 Suspicious message / link test')
-    st.caption('Paste text or a URL. The lab checks local demonstration rules; it never opens the link. BLOCK applies only inside this lab, not to your browser or network.')
+    st.subheader('🔎 Optional message / URL screening (offline)')
+    st.caption('This optional offline checker does NOT verify websites, detect malicious domains, or block browser connections. A plain website URL is UNKNOWN, and an IP-based URL requires REVIEW; neither proves safety or danger. Automatic gateway checks run without this form.')
     value=st.text_area('Message or URL',placeholder='Example: Urgent bank verification: send your password',key='qs_manual_content')
     if st.button('🔍 Check & test alert',type='primary',key='qs_check_content'):
         try:
@@ -88,11 +113,12 @@ def message_test(gateway):
                     gateway.last_persist_error=f'{type(exc).__name__}: {exc}'
             if event['decision']=='BLOCK':
                 st.error('🔴 BLOCK — '+event['reason'])
-                components.html(_alarm_html(),height=70)
+                components.html(_alarm_html(event['timestamp_utc'] + event['reason']),height=85)
                 st.warning('If you hear no sound, click the audio play control. Browsers can prevent automatic sound.')
+            elif event['decision']=='REVIEW':
+                st.warning('🟡 REVIEW — '+event['reason']+' (not proof of malware)')
             else:
-                st.success('🟢 ALLOW in this simple rule demo — no configured pattern matched.')
-                st.warning('ALLOW does NOT mean a link is safe. Unknown phishing links may pass these basic rules.')
+                st.info('⚪ UNKNOWN — no configured indicators matched. Link safety has NOT been verified.')
         except ValueError as exc:st.warning(str(exc))
 
 
@@ -155,11 +181,16 @@ def show(actor):
             st.warning('These checks run a fresh local cryptographic self-test per virtual device and KEM type. They do not prove a remote device connection, identity authentication, or encrypted IoT telemetry.')
     if actor['RoleName']=='Admin':
         st.subheader('🧪 Security tests (Administrator)')
-        scenario = st.selectbox('Virtual client / test',
-            ['CCTV', 'Router', 'Sensor', 'Unauthorized access', 'Tampered message', 'Replay attack', 'Rate limit'])
+        device_choice = st.selectbox('1. Device to test', ['CCTV camera', 'Network router', 'Temperature sensor'])
+        scenario_options = {'CCTV camera': [('Camera: trusted telemetry','CCTV'), ('Camera: tampered reading','Tampered message'), ('Camera: replay protection','Replay attack')],
+                            'Network router': [('Router: trusted telemetry','Router'), ('Router: request limit','Rate limit'), ('Router: invalid access','Unauthorized access')],
+                            'Temperature sensor': [('Sensor: trusted reading','Sensor'), ('Sensor: tampered reading','Tampered message'), ('Sensor: replay protection','Replay attack')]}
+        selected = st.selectbox('2. Security check', [x[0] for x in scenario_options[device_choice]])
+        scenario = next(v for label,v in scenario_options[device_choice] if label==selected)
+        st.caption('Admin diagnostic tests use a trusted test harness. PC B tests are independent and have no trusted credentials.')
         if st.button('▶️ Send request', type='primary', disabled=not bool(gateway.server)):
             try:
-                event = gateway.send(scenario)
+                event = gateway.send(scenario, device_override={"CCTV camera":"virtual-cctv-01", "Network router":"virtual-router-01", "Temperature sensor":"virtual-sensor-01"}[device_choice])
                 message = f"{event['decision']} — {event['reason']}"
                 (st.success if event['decision'] == 'ALLOW' else st.error)(message)
             except Exception as exc:

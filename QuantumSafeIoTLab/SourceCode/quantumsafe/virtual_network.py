@@ -100,7 +100,14 @@ class VirtualGateway:
                     self.calls[device].append(now)
                     self.nonces.add((device, nonce))
                     decision, reason = 'ALLOW', 'Authenticated and integrity verified'
-            event = {'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
+            attack_type, affected, precaution = {
+                'Invalid device token': ('Unauthorized connection', 'Device access', 'Verify device enrollment and source'),
+                'Device is not registered': ('Unknown device identity', 'Device registry', 'Review attempted device identity'),
+                'Message integrity check failed': ('Message tampering', 'Telemetry integrity', 'Reject modified data; inspect sender'),
+                'Replay nonce detected': ('Replay attempt', 'Session freshness', 'Require unique nonces'),
+                'Rate limit: 8 requests per 10 seconds': ('Excessive requests', 'Gateway availability', 'Apply temporary throttling'),
+            }.get(reason, ('No confirmed attack', 'Device telemetry', 'Continue monitoring'))
+            event = {'attack_type': attack_type, 'affected_component': affected, 'precaution': precaution, 'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
                      'request_type':'telemetry', 'source_ip':source_ip}
             self.events.appendleft(event)
@@ -115,10 +122,13 @@ class VirtualGateway:
                 self.last_persist_error = f'{type(exc).__name__}: {exc}'
         return event
 
-    def send(self, scenario):
+    def send(self, scenario, device_override=None):
         if not self.server:
             raise RuntimeError('Start the virtual gateway first')
         device = {'CCTV':'virtual-cctv-01','Router':'virtual-router-01','Sensor':'virtual-sensor-01'}.get(scenario,'virtual-cctv-01')
+        if device_override is not None:
+            if device_override not in self.registered_devices: raise ValueError('Unknown virtual device')
+            device = device_override
         nonce = secrets.token_hex(12)
         payload = {'device':device,'nonce':nonce,'value':42,'token':self.token}
         payload['signature'] = self.sign(device,nonce,payload['value'])
