@@ -56,7 +56,7 @@ def live_monitor(gateway):
 def show(actor):
     from ..version import APP_VERSION
     st.title(f'🧩 Virtual IoT Security Gateway · v{APP_VERSION}')
-    st.info('LOCAL TEST LAB: HTTP requests to 127.0.0.1 only. This is not real router/CCTV packet monitoring or ML-based intrusion detection.')
+    st.info('LOCAL TEST LAB: HTTP requests to 127.0.0.1 only. Rule-based gateway monitoring; the Edge-IIoTset ML model is a separate offline CSV analysis tool.')
     gateway = get_gateway()
     st.subheader('🗄️ SQL Server event storage')
     try:
@@ -102,6 +102,10 @@ def show(actor):
     st.caption('Replay and rate-limit tests may generate multiple events. Rate-limit window is 10 seconds.')
     if gateway.last_persist_error:
         st.error('Last SQL event save failed: ' + gateway.last_persist_error)
+    with st.expander('🧪 Why was this request allowed or blocked?'):
+        st.write('CCTV/Router/Sensor: valid token + valid HMAC signature + unused nonce + within rate limit → ALLOW.')
+        st.write('Unauthorized: wrong token → BLOCK. Tampered: message changed after signing → BLOCK. Replay: reused nonce → BLOCK. Rate limit: more than 8 requests per 10 seconds → BLOCK.')
+        st.caption('These are application-level HTTP rules, NOT Random Forest predictions or captured network packets.')
     live_monitor(gateway)
     st.divider()
     st.subheader('📚 Persistent SQL Server event history')

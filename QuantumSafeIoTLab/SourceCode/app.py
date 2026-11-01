@@ -25,7 +25,7 @@ except Exception:
 
 st.sidebar.title(f'🔐 QuantumSafe v{APP_VERSION}')
 st.sidebar.caption(f"{actor['Username']} · {actor['RoleName']}")
-options = ['🏠 Dashboard', '📘 Start Here']
+options = ['🏠 Dashboard', '📘 Start Here', '🧭 Lab Guide']
 if may_run(actor['RoleName']):
     options += ['🔒 Secure Demo', '🌐 LAN Lab', '🧩 Virtual Gateway', '🤖 ML Lab', '⚡ Run Benchmark', '🧪 Test Center']
 options += ['📊 Results']
@@ -38,7 +38,10 @@ if st.sidebar.button('🚪 Log out'):
 st.sidebar.divider()
 st.sidebar.caption('Local virtual IoT gateway + SQL monitoring + offline Edge-IIoTset RF. No live ML blocking.')
 
-if page == '📘 Start Here':
+if page == '🧭 Lab Guide':
+    from quantumsafe.ui import lab_guide
+    lab_guide.show(actor)
+elif page == '📘 Start Here':
     from quantumsafe.ui import start_here
     start_here.show(actor)
 elif page == '🏠 Dashboard':
