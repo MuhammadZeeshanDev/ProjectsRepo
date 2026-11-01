@@ -14,6 +14,11 @@ def get_gateway():
     return VirtualGateway()
 
 
+def snapshot_events(gateway):
+    with gateway.lock:
+        return list(gateway.events)
+
+
 def _event_frame(gateway):
     with gateway.lock:
         snapshot = list(gateway.events)
@@ -52,7 +57,15 @@ def live_monitor(gateway):
     else:
         latest = alerts.iloc[0]
         components.html(_alarm_html(str(latest['timestamp_utc']) + str(latest['device']) + str(latest['reason'])), height=85)
-        st.dataframe(alerts[['timestamp_utc', 'device', 'reason', 'source']], hide_index=True, use_container_width=True)
+        details = snapshot_events(gateway)
+        blocked_details = [e for e in details if e.get('decision') == 'BLOCK']
+        columns = ['timestamp_utc','device','source_ip','attack_type','affected_component','reason','precaution']
+        st.dataframe(pd.DataFrame(blocked_details).reindex(columns=columns), hide_index=True, use_container_width=True)
+    st.subheader('📋 Device-wise security report')
+    from ..incident_reports import device_summary
+    report_rows = device_summary(snapshot_events(gateway), gateway.registered_devices)
+    st.dataframe(pd.DataFrame(report_rows), hide_index=True, use_container_width=True)
+    st.caption('Observed requests are not proof of an active device connection. This is a virtual HTTP lab.')
     st.subheader('📝 Recent HTTP events')
     st.dataframe(df, hide_index=True, use_container_width=True)
     st.download_button('⬇️ Export events CSV', df.to_csv(index=False).encode('utf-8'),
@@ -135,7 +148,11 @@ def show(actor):
         st.error(f'SQL Server unavailable: {type(exc).__name__}: {exc}')
     if ready:
         gateway.event_sink = sql_store.insert_event
-        st.success('SQL persistence enabled. New HTTP events are saved to SQL Server.')
+        try:
+            sql_store.initialize()  # add incident columns on older installations
+            st.success('SQL incident history ready (including attack details).')
+        except Exception as exc:
+            st.error(f'SQL incident schema upgrade failed: {type(exc).__name__}: {exc}')
     else:
         gateway.event_sink = None
         st.warning('SQL event table is not initialized. Gateway still works in memory.')
