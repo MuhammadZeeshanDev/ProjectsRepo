@@ -5,6 +5,9 @@ import streamlit as st
 from ..virtual_gateway_sim import SCENARIOS, evaluate
 from ..virtual_network import VirtualGateway
 from .. import gateway_event_store as sql_store
+from ..message_policy import assess_content
+import base64, io, math, struct, wave
+import streamlit.components.v1 as components
 
 @st.cache_resource
 def get_gateway():
@@ -53,6 +56,46 @@ def live_monitor(gateway):
                        file_name='quantumsafe_virtual_events.csv', mime='text/csv', key='export_live_http_events')
 
 
+
+
+def _alarm_html():
+    """Generate a short local WAV; audio playback requires browser permission."""
+    rate=16000
+    samples=[]
+    for i in range(int(rate*.65)):
+        tone=0.35*math.sin(2*math.pi*880*i/rate) if (i//2400)%2==0 else 0
+        samples.append(struct.pack('<h',int(32767*tone)))
+    out=io.BytesIO()
+    with wave.open(out,'wb') as w:
+        w.setnchannels(1);w.setsampwidth(2);w.setframerate(rate);w.writeframes(b''.join(samples))
+    audio=base64.b64encode(out.getvalue()).decode('ascii')
+    return f'<audio controls autoplay><source src="data:audio/wav;base64,{audio}" type="audio/wav"></audio>'
+
+def message_test(gateway):
+    st.subheader('🚨 Suspicious message / link test')
+    st.caption('Paste text or a URL. The lab checks local demonstration rules; it never opens the link. BLOCK applies only inside this lab, not to your browser or network.')
+    value=st.text_area('Message or URL',placeholder='Example: Urgent bank verification: send your password',key='qs_manual_content')
+    if st.button('🔍 Check & test alert',type='primary',key='qs_check_content'):
+        try:
+            event=assess_content(value)
+            with gateway.lock:
+                gateway.events.appendleft(event)
+            if gateway.event_sink:
+                try:
+                    gateway.event_sink(event)
+                    gateway.last_persist_error=None
+                except Exception as exc:
+                    gateway.last_persist_error=f'{type(exc).__name__}: {exc}'
+            if event['decision']=='BLOCK':
+                st.error('🔴 BLOCK — '+event['reason'])
+                components.html(_alarm_html(),height=70)
+                st.warning('If you hear no sound, click the audio play control. Browsers can prevent automatic sound.')
+            else:
+                st.success('🟢 ALLOW in this simple rule demo — no configured pattern matched.')
+                st.warning('ALLOW does NOT mean a link is safe. Unknown phishing links may pass these basic rules.')
+        except ValueError as exc:st.warning(str(exc))
+
+
 def show(actor):
     from ..version import APP_VERSION
     st.title(f'🧩 Virtual IoT Security Gateway · v{APP_VERSION}')
@@ -89,6 +132,8 @@ def show(actor):
         gateway.stop()
         st.warning('Local HTTP gateway stopped.')
     st.metric('Gateway status', f'Running on 127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
+    message_test(gateway)
+    st.divider()
     st.subheader('🌐 Send a virtual device request')
     scenario = st.selectbox('Virtual client / test',
         ['CCTV', 'Router', 'Sensor', 'Unauthorized access', 'Tampered message', 'Replay attack', 'Rate limit'])
@@ -129,9 +174,4 @@ def show(actor):
             st.error(f'Unable to load SQL history: {type(exc).__name__}: {exc}')
     else:
         st.info('Initialize the SQL event table to enable permanent event history.')
-    st.divider()
-    with st.expander('Older offline policy simulation (v0.2.2)'):
-        old = st.selectbox('Offline scenario', list(SCENARIOS))
-        if st.button('Run offline simulation'):
-            st.json(evaluate(old))
     st.warning('Monitoring covers only this app’s local HTTP test gateway. Live panel uses last 200 in-memory events. SQL history survives restart when enabled. No packet sniffing, ML IDS, or network-wide firewall is included.')

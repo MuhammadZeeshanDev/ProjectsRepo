@@ -1,0 +1,1 @@
+v0.6.0: focused navigation, standalone user manual, manual suspicious-content rule test with local audible alarm, gateway event logging. Does not block URLs outside QuantumSafe; no live ML gateway integration.

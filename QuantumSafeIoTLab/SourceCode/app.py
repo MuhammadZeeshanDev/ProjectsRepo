@@ -1,64 +1,31 @@
-"""One simple entry point for the main application: streamlit run SourceCode/app.py."""
+"""QuantumSafe: focused beginner-friendly IoT security lab."""
 import streamlit as st
 from quantumsafe.version import APP_VERSION
 from quantumsafe import users
 from quantumsafe.permissions import may_run, may_manage_users
-from quantumsafe.ui import (
-    login, dashboard, demo, benchmark_page, results, admin_page,
-    lan_page, test_center, virtual_lab, ml_lab
-)
-
-st.set_page_config(page_title=f'QuantumSafe IoT Lab v{APP_VERSION}', page_icon='🔐',
-                   layout='wide', initial_sidebar_state='expanded')
-
-actor_id = st.session_state.get('actor_id')
+from quantumsafe.ui import login, dashboard, virtual_lab, ml_lab, demo, lan_page, admin_page
+st.set_page_config(page_title=f'QuantumSafe IoT Lab v{APP_VERSION}', page_icon='🔐',layout='wide')
+actor_id=st.session_state.get('actor_id')
 if not actor_id:
-    login.show()
-    st.stop()
-
+    login.show(); st.stop()
 try:
-    actor = users.active_actor(int(actor_id))
+    actor=users.active_actor(int(actor_id))
 except Exception:
-    st.session_state.pop('actor_id', None)
-    st.warning('Please sign in again. Your session may have expired.')
-    st.stop()
-
+    st.session_state.pop('actor_id',None)
+    st.warning('Sign in again.'); st.stop()
 st.sidebar.title(f'🔐 QuantumSafe v{APP_VERSION}')
 st.sidebar.caption(f"{actor['Username']} · {actor['RoleName']}")
-options = ['🏠 Dashboard', '📘 Start Here', '🧭 Lab Guide']
+options=['🏠 Overview']
 if may_run(actor['RoleName']):
-    options += ['🔒 Secure Demo', '🌐 LAN Lab', '🧩 Virtual Gateway', '🤖 ML Lab', '⚡ Run Benchmark', '🧪 Test Center']
-options += ['📊 Results']
-if may_manage_users(actor['RoleName']):
-    options += ['👥 Users']
-page = st.sidebar.radio('Open screen', options, key='nav_page')
+    options+=['🧩 Gateway & Alerts','🤖 ML Detection','🔒 ML-KEM Secure Demo','🌐 LAN Lab']
+if may_manage_users(actor['RoleName']):options+=['👥 Manage Users']
+page=st.sidebar.radio('Lab screens',options,key='nav_page')
 if st.sidebar.button('🚪 Log out'):
-    st.session_state.clear()
-    st.rerun()
-st.sidebar.divider()
-st.sidebar.caption('Local virtual IoT gateway + SQL monitoring + offline Edge-IIoTset RF. No live ML blocking.')
-
-if page == '🧭 Lab Guide':
-    from quantumsafe.ui import lab_guide
-    lab_guide.show(actor)
-elif page == '📘 Start Here':
-    from quantumsafe.ui import start_here
-    start_here.show(actor)
-elif page == '🏠 Dashboard':
-    dashboard.show(actor)
-elif page == '🔒 Secure Demo':
-    demo.show(actor)
-elif page == '🌐 LAN Lab':
-    lan_page.show(actor)
-elif page == '🧩 Virtual Gateway':
-    virtual_lab.show(actor)
-elif page == '🤖 ML Lab':
-    ml_lab.show(actor)
-elif page == '⚡ Run Benchmark':
-    benchmark_page.show(actor)
-elif page == '🧪 Test Center':
-    test_center.show(actor)
-elif page == '📊 Results':
-    results.show(actor)
-elif page == '👥 Users':
-    admin_page.show(actor)
+    st.session_state.clear();st.rerun()
+st.sidebar.caption('Virtual demonstrations only · not a browser firewall')
+if page=='🏠 Overview':dashboard.show(actor)
+elif page=='🧩 Gateway & Alerts':virtual_lab.show(actor)
+elif page=='🤖 ML Detection':ml_lab.show(actor)
+elif page=='🔒 ML-KEM Secure Demo':demo.show(actor)
+elif page=='🌐 LAN Lab':lan_page.show(actor)
+elif page=='👥 Manage Users':admin_page.show(actor)
