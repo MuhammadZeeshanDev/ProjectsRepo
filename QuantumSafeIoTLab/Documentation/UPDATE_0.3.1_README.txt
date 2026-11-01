@@ -1,0 +1,15 @@
+QuantumSafe v0.3.1 — Offline Edge-IIoTset SA-HFS v3 Random Forest inference
+
+1. STOP the Streamlit app.
+2. Put ONLY this ZIP inside QuantumSafeIoTLab\Updates.
+3. Run UPDATE_APP.bat and type YES.
+4. ML dependencies are not installed by the updater. In PowerShell from QuantumSafeIoTLab folder:
+   & "..\.venv\Scripts\python.exe" -m pip install "scikit-learn>=1.5,<1.8" "joblib>=1.4,<2"
+   IMPORTANT: ideally match original Colab sklearn/joblib versions for checkpoint compatibility.
+5. Restart the app; open ML Lab > Edge-IIoTset RF Prediction. Upload compatible Edge-IIoTset CSV, click Run.
+6. This uses only the bundled existing trained checkpoint. Max first 10,000 rows; 60 MB upload.
+7. No training, live gateway blocking, SQL results persistence or new dataset models.
+8. Existing model registry remains unchanged. Research metrics are NOT independent heldout results.
+9. Only load trusted checkpoint; bundled checkpoint is SHA256 checked.
+
+If dependency import or pickle compatibility fails, send the exact error and package versions.

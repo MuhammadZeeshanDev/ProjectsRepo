@@ -57,7 +57,7 @@ def profile_csv(raw, label):
 def show(actor):
     st.title('🤖 ML Lab — Dataset Manager & Model Registry')
     st.info('Research notebook is not automatically a trained model. Import exported checkpoints separately. Imported .pkl/.joblib files are stored but NEVER executed here.')
-    t1,t2,t3=st.tabs(['📂 Dataset profile','📥 Import model','📋 Model registry'])
+    t1,t2,t3,t4=st.tabs(['📂 Dataset profile','📥 Import model','📋 Model registry','🎯 Edge-IIoTset RF Prediction'])
     with t1:
         upload=st.file_uploader('CSV or ZIP containing CSV (max 60 MB upload)',type=['csv','zip'],key='ml_dataset')
         if upload:
@@ -104,3 +104,34 @@ def show(actor):
             st.dataframe(df,use_container_width=True)
         else: st.info('No imported models yet.')
         st.caption('This release does not run training, model inference, cross-dataset evaluation or live blocking. Those require verified feature/preprocessing compatibility and trusted model loading.')
+
+    with t4:
+        st.subheader('SA-HFS v3 Random Forest — 70/30 (existing trained checkpoint)')
+        st.caption('Offline CSV inference only. No retraining, no new datasets, no gateway blocking.')
+        st.warning('Exploratory results only: uploaded rows may overlap training data. Do not report these metrics as independent research results.')
+        upload_rf = st.file_uploader('Upload compatible Edge-IIoTset CSV (up to 60 MB)', type=['csv'], key='edge_rf_csv')
+        if upload_rf is not None and st.button('▶ Run saved Random Forest', key='edge_rf_run'):
+            try:
+                from quantumsafe.edge_rf_inference import predict_csv
+                with st.spinner('Running saved model...'):
+                    output, metrics = predict_csv(upload_rf.getvalue())
+                st.success(f'Predicted {len(output):,} records (first 10,000 rows maximum).')
+                counts = output['QuantumSafe_Prediction'].value_counts()
+                a, b = st.columns(2)
+                a.metric('Normal (0)', int(counts.get(0, 0)))
+                b.metric('Attack (1)', int(counts.get(1, 0)))
+                st.dataframe(output.head(100), use_container_width=True)
+                if metrics:
+                    st.subheader('Evaluation (only when Attack_label is 0/1)')
+                    mcols = st.columns(4)
+                    for col, (key, value) in zip(mcols, [(k,v) for k,v in metrics.items() if k != 'Confusion matrix']):
+                        col.metric(key, f'{value:.2%}')
+                    st.write('Confusion matrix: rows actual [0,1], columns predicted [0,1]')
+                    st.dataframe(__import__('pandas').DataFrame(metrics['Confusion matrix'], index=['Actual 0','Actual 1'], columns=['Predicted 0','Predicted 1']))
+                else:
+                    st.info('No valid binary Attack_label found. Predictions shown without accuracy metrics.')
+                st.download_button('⬇ Download predictions CSV', output.to_csv(index=False).encode('utf-8'), 'QuantumSafe_EdgeIIoT_predictions.csv', 'text/csv', key='edge_rf_download')
+            except ImportError as e:
+                st.error(f'Missing ML dependency: {e}. Install scikit-learn and joblib in the app virtual environment (see update README).')
+            except Exception as e:
+                st.error(f'Prediction could not run: {e}')
