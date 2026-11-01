@@ -175,7 +175,17 @@ def show(actor):
         gateway.stop()
         st.warning('Local HTTP gateway stopped.')
     st.metric('Gateway status', f'Running on 127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
-    st.caption('Independent attacker console: open a second terminal and run SourceCode/attacker_console.py. It uses port 8765 and receives NO trusted credentials. Localhost is one PC, not a separate network host.')
+    st.caption('PC B runs in its own local browser interface. No defender keys are shared. Both participants still run on this one computer.')
+    if actor['RoleName'] == 'Admin':
+        if st.button('💻 Open PC B Test Station', help='Launch the independent PC B console automatically on localhost:8502'):
+            try:
+                from ..pc_b_launcher import launch_console
+                address = launch_console(open_browser=True)
+                st.success('PC B console started. If a browser tab did not open, use the link below.')
+                st.link_button('Open PC B in browser', address)
+            except Exception as exc:
+                st.error(f'PC B could not start: {type(exc).__name__}: {exc}')
+    st.caption('Alternative: double-click SourceCode/Launch_PC_B.pyw on Windows.')
     if actor['RoleName']=='Admin':
         message_test(gateway)
     st.divider()
