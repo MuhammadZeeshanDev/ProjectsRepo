@@ -25,7 +25,7 @@ class VirtualGateway:
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
 
-    def start(self):
+    def start(self, port=0):
         if self.server:
             return self.port
         gateway = self
@@ -44,7 +44,7 @@ class VirtualGateway:
                     data = json.loads(self.rfile.read(size))
                     if not isinstance(data, dict):
                         raise ValueError('Expected object')
-                    result = gateway.evaluate(data)
+                    result = gateway.evaluate(data, source_ip=self.client_address[0])
                     encoded = json.dumps(result).encode('utf-8')
                     self.send_response(200 if result['decision'] == 'ALLOW' else 403)
                     self.send_header('Content-Type','application/json')
@@ -53,7 +53,7 @@ class VirtualGateway:
                     self.wfile.write(encoded)
                 except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
                     self.send_error(400)
-        self.server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        self.server = ThreadingHTTPServer(('127.0.0.1', int(port)), Handler)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -72,7 +72,7 @@ class VirtualGateway:
         msg = json.dumps([device, nonce, value], separators=(',', ':'), ensure_ascii=True).encode()
         return hmac.new(self.key, msg, hashlib.sha256).hexdigest()
 
-    def evaluate(self, data):
+    def evaluate(self, data, source_ip="local"):
         device = str(data.get('device',''))[:64]
         nonce = str(data.get('nonce',''))[:100]
         value = data.get('value')
@@ -99,7 +99,7 @@ class VirtualGateway:
                     decision, reason = 'ALLOW', 'Authenticated and integrity verified'
             event = {'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
-                     'request_type':'telemetry'}
+                     'request_type':'telemetry', 'source_ip':source_ip}
             self.events.appendleft(event)
         # Never hold the gateway lock while performing database I/O.
         # A failed DB write does not change the gateway's security decision.

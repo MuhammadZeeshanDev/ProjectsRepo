@@ -49,7 +49,7 @@ def live_monitor(gateway):
     if alerts.empty:
         st.success('No blocked requests in the current event window.')
     else:
-        st.dataframe(alerts[['timestamp_utc', 'device', 'reason']], hide_index=True, use_container_width=True)
+        st.dataframe(alerts[['timestamp_utc', 'device', 'reason', 'source']], hide_index=True, use_container_width=True)
     st.subheader('📝 Recent HTTP events')
     st.dataframe(df, hide_index=True, use_container_width=True)
     st.download_button('⬇️ Export events CSV', df.to_csv(index=False).encode('utf-8'),
@@ -124,7 +124,7 @@ def show(actor):
     c1, c2 = st.columns(2)
     if c1.button('🟢 Start local gateway', disabled=bool(gateway.server)):
         try:
-            gateway.start()
+            gateway.start(port=8765)
             st.success('Local HTTP gateway started.')
         except Exception as exc:
             st.error(f'Gateway could not start: {exc}')
@@ -132,6 +132,7 @@ def show(actor):
         gateway.stop()
         st.warning('Local HTTP gateway stopped.')
     st.metric('Gateway status', f'Running on 127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
+    st.caption('Independent attacker console: open a second terminal and run SourceCode/attacker_console.py. It uses port 8765 and receives NO trusted credentials. Localhost is one PC, not a separate network host.')
     message_test(gateway)
     st.divider()
     st.subheader('🌐 Send a virtual device request')
