@@ -106,32 +106,55 @@ def show(actor):
         st.caption('This release does not run training, model inference, cross-dataset evaluation or live blocking. Those require verified feature/preprocessing compatibility and trusted model loading.')
 
     with t4:
-        st.subheader('SA-HFS v3 Random Forest — 70/30 (existing trained checkpoint)')
-        st.caption('Offline CSV inference only. No retraining, no new datasets, no gateway blocking.')
-        st.warning('Exploratory results only: uploaded rows may overlap training data. Do not report these metrics as independent research results.')
-        upload_rf = st.file_uploader('Upload compatible Edge-IIoTset CSV (up to 60 MB)', type=['csv'], key='edge_rf_csv')
-        if upload_rf is not None and st.button('▶ Run saved Random Forest', key='edge_rf_run'):
+        st.subheader('SA-HFS v3 Random Forest — 70/30')
+        st.caption('Uses your existing saved model. No retraining or automatic gateway blocking.')
+        st.warning('Metrics from arbitrary CSV rows are exploratory, not independent research validation.')
+        import sklearn
+        st.caption(f'Installed scikit-learn: {sklearn.__version__}')
+        st.info('Large CSV: use the local file path below. Data is read in 10,000-row batches; no 60 MB upload limit applies to local paths.')
+        local_path = st.text_input('Local CSV full path (Windows)', placeholder=r'D:\Datasets\Edge_IIoTset_Cleaned.csv', key='edge_rf_local_path')
+        uploaded = st.file_uploader('Or upload a small Edge-IIoTset CSV (60 MB limit)', type=['csv'], key='edge_rf_csv')
+        if st.button('▶ Run saved Random Forest', key='edge_rf_run'):
             try:
-                from quantumsafe.edge_rf_inference import predict_csv
-                with st.spinner('Running saved model...'):
-                    output, metrics = predict_csv(upload_rf.getvalue())
-                st.success(f'Predicted {len(output):,} records (first 10,000 rows maximum).')
-                counts = output['QuantumSafe_Prediction'].value_counts()
-                a, b = st.columns(2)
-                a.metric('Normal (0)', int(counts.get(0, 0)))
-                b.metric('Attack (1)', int(counts.get(1, 0)))
-                st.dataframe(output.head(100), use_container_width=True)
-                if metrics:
-                    st.subheader('Evaluation (only when Attack_label is 0/1)')
-                    mcols = st.columns(4)
-                    for col, (key, value) in zip(mcols, [(k,v) for k,v in metrics.items() if k != 'Confusion matrix']):
-                        col.metric(key, f'{value:.2%}')
-                    st.write('Confusion matrix: rows actual [0,1], columns predicted [0,1]')
-                    st.dataframe(__import__('pandas').DataFrame(metrics['Confusion matrix'], index=['Actual 0','Actual 1'], columns=['Predicted 0','Predicted 1']))
+                from quantumsafe.edge_rf_inference import predict_local_csv, predict_csv
+                if local_path.strip():
+                    with st.spinner('Processing local CSV in batches. This can take a while...'):
+                        result = predict_local_csv(local_path.strip().strip('"'))
+                    st.session_state['edge_rf_result'] = result
+                elif uploaded is not None:
+                    with st.spinner('Predicting uploaded sample...'):
+                        output, metrics = predict_csv(uploaded.getvalue())
+                    st.session_state['edge_rf_result'] = {
+                        'rows':len(output),
+                        'counts':{0:int((output['QuantumSafe_Prediction']==0).sum()), 1:int((output['QuantumSafe_Prediction']==1).sum())},
+                        'metrics':metrics, 'preview':output.head(100),
+                        'csv_bytes':output.to_csv(index=False).encode('utf-8')}
                 else:
-                    st.info('No valid binary Attack_label found. Predictions shown without accuracy metrics.')
-                st.download_button('⬇ Download predictions CSV', output.to_csv(index=False).encode('utf-8'), 'QuantumSafe_EdgeIIoT_predictions.csv', 'text/csv', key='edge_rf_download')
-            except ImportError as e:
-                st.error(f'Missing ML dependency: {e}. Install scikit-learn and joblib in the app virtual environment (see update README).')
+                    st.error('Enter a local CSV path or upload a CSV.')
+            except AttributeError as e:
+                if '_RemainderColsList' in str(e):
+                    st.error('Model was saved using a different scikit-learn version. Install the matching training version in the app virtual environment, then restart the app. See update README for commands.')
+                else:
+                    st.error(f'Prediction failed: {e}')
             except Exception as e:
-                st.error(f'Prediction could not run: {e}')
+                st.error(f'Prediction failed: {e}')
+        result = st.session_state.get('edge_rf_result')
+        if result:
+            st.success(f"Processed {result['rows']:,} records")
+            a,b = st.columns(2)
+            a.metric('Normal (0)',result['counts'].get(0,0))
+            b.metric('Attack (1)',result['counts'].get(1,0))
+            st.dataframe(result['preview'],use_container_width=True)
+            metrics = result.get('metrics')
+            if metrics:
+                st.subheader('Exploratory evaluation')
+                for key in ('Accuracy','Precision (attack=1)','Recall (attack=1)','F1 (attack=1)'):
+                    st.metric(key, f"{metrics[key]:.2%}")
+                st.write('Confusion matrix (rows actual 0/1, columns predicted 0/1)')
+                import pandas as pd
+                st.dataframe(pd.DataFrame(metrics['Confusion matrix'],index=['Actual 0','Actual 1'],columns=['Predicted 0','Predicted 1']))
+            if 'csv_bytes' in result:
+                st.download_button('⬇ Download predictions CSV',result['csv_bytes'],'QuantumSafe_predictions.csv','text/csv')
+            elif 'output_path' in result:
+                st.info('Full predictions CSV saved locally at: '+result['output_path'])
+                st.caption('Large files are saved to disk instead of being loaded into browser memory.')

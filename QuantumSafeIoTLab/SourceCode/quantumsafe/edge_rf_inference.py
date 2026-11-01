@@ -79,3 +79,80 @@ def predict_csv(raw: bytes, max_rows=10000):
     return result, metrics
 
 EXPECTED_SHA256 = '962c650ffc6894b49808310b8928d06c14bc757c3ef3f8f2f8c476cca0a0fb6d'
+
+
+# Disk-based processing: handles large local CSV files without browser upload limits.
+def predict_local_csv(path, chunk_size=10000, progress=None):
+    import csv
+    import tempfile
+    from sklearn.metrics import confusion_matrix
+    import numpy as np
+    checkpoint = load_checkpoint()
+    path = Path(path).expanduser().resolve()
+    if not path.is_file() or path.suffix.lower() != '.csv':
+        raise ValueError('Select an existing .csv file on this computer.')
+    if path.stat().st_size == 0:
+        raise ValueError('CSV is empty.')
+    cols = list(checkpoint['features'])
+    output = tempfile.NamedTemporaryFile(prefix='quantumsafe_predictions_', suffix='.csv', delete=False)
+    output.close()
+    output_path = Path(output.name)
+    total = 0
+    counts = {0: 0, 1: 0}
+    confusion = np.zeros((2,2), dtype=np.int64)
+    evaluated = 0
+    label_present = None
+    preview = []
+    try:
+        for chunk in pd.read_csv(path, chunksize=chunk_size, low_memory=False):
+            if chunk.empty:
+                continue
+            missing = [col for col in cols if col not in chunk.columns]
+            if missing:
+                raise ValueError('Missing required columns: ' + ', '.join(missing))
+            x = chunk[cols].copy()
+            for col in cols:
+                if col != 'mqtt.protoname':
+                    x[col] = pd.to_numeric(x[col], errors='coerce')
+            x['mqtt.protoname'] = x['mqtt.protoname'].fillna('__ZERO__').astype(str)
+            processed = checkpoint['preprocessor'].transform(x)
+            if processed.shape[1] != checkpoint['model'].n_features_in_:
+                raise ValueError('Processed feature count mismatch.')
+            predictions = checkpoint['model'].predict(processed)
+            chunk = chunk.copy()
+            chunk['QuantumSafe_Prediction'] = predictions
+            chunk.to_csv(output_path, mode='a', header=(total == 0), index=False)
+            if len(preview) < 100:
+                preview.append(chunk.head(100 - len(preview)).copy())
+            total += len(chunk)
+            for label in (0,1):
+                counts[label] += int((predictions == label).sum())
+            if label_present is None:
+                label_present = 'Attack_label' in chunk
+            if label_present:
+                truth = pd.to_numeric(chunk['Attack_label'], errors='coerce')
+                valid = truth.isin([0,1])
+                if valid.any():
+                    confusion += confusion_matrix(truth[valid].astype(int), predictions[valid], labels=[0,1])
+                    evaluated += int(valid.sum())
+            if progress:
+                progress(total)
+        if not total:
+            raise ValueError('CSV contains no data rows.')
+        tn, fp, fn, tp = map(int, (confusion[0,0], confusion[0,1], confusion[1,0], confusion[1,1]))
+        metrics = None
+        if evaluated:
+            metrics = {
+                'Accuracy': (tp+tn)/evaluated,
+                'Precision (attack=1)': tp/(tp+fp) if tp+fp else 0.0,
+                'Recall (attack=1)': tp/(tp+fn) if tp+fn else 0.0,
+                'F1 (attack=1)': 2*tp/(2*tp+fp+fn) if 2*tp+fp+fn else 0.0,
+                'Confusion matrix': confusion.tolist(),
+                'Evaluated labeled rows': evaluated,
+            }
+        return {'rows':total, 'counts':counts, 'metrics':metrics,
+                'preview':pd.concat(preview, ignore_index=True).head(100) if preview else pd.DataFrame(),
+                'output_path':str(output_path)}
+    except Exception:
+        output_path.unlink(missing_ok=True)
+        raise

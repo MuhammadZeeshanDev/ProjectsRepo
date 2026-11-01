@@ -1,0 +1,23 @@
+QuantumSafe v0.3.2 — Large CSV + model compatibility guidance
+
+This patch preserves the existing trained Edge-IIoTset SA-HFS v3 RF checkpoint.
+It adds LOCAL CSV PATH processing in chunks (10,000 rows) to bypass the 60 MB browser upload limit.
+The Dataset Profile and Import Model tabs still retain their existing 60 MB upload limits.
+
+IMPORTANT: The _RemainderColsList error is a scikit-learn VERSION mismatch, not a CSV problem.
+Find the exact scikit-learn version used when your model was saved, preferably from your
+Colab training notebook / package_versions.json, and install that version in the Windows app venv.
+From inside QuantumSafeIoTLab project folder in PowerShell:
+  & "..\.venv\Scripts\python.exe" -m pip show scikit-learn
+  & "..\.venv\Scripts\python.exe" -m pip install --force-reinstall "scikit-learn==<TRAINING_VERSION>"
+Replace <TRAINING_VERSION> with the actual version (do not type angle brackets literally).
+Restart Streamlit after changing dependencies.
+The update installer does NOT change Python dependencies.
+
+Use ML Lab -> Edge-IIoTset RF Prediction -> Local CSV full path.
+Example: D:\Datasets\Edge_IIoTset_Cleaned.csv
+The CSV must be on the same Windows PC where Streamlit runs.
+Outputs are saved to a temporary CSV path shown in the app; copy to a permanent folder if needed.
+
+For research publication, only report metrics on verified independent holdout data.
+Do not load checkpoints from untrusted sources: joblib/pickle can execute code.
