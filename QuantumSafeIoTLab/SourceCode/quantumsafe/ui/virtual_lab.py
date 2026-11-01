@@ -54,7 +54,8 @@ def live_monitor(gateway):
 
 
 def show(actor):
-    st.title('🧩 Virtual IoT Security Gateway · v0.2.5')
+    from ..version import APP_VERSION
+    st.title(f'🧩 Virtual IoT Security Gateway · v{APP_VERSION}')
     st.info('LOCAL TEST LAB: HTTP requests to 127.0.0.1 only. This is not real router/CCTV packet monitoring or ML-based intrusion detection.')
     gateway = get_gateway()
     st.subheader('🗄️ SQL Server event storage')

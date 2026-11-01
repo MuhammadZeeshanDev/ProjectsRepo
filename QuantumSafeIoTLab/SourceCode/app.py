@@ -1,5 +1,6 @@
 """One simple entry point for the main application: streamlit run SourceCode/app.py."""
 import streamlit as st
+from quantumsafe.version import APP_VERSION
 from quantumsafe import users
 from quantumsafe.permissions import may_run, may_manage_users
 from quantumsafe.ui import (
@@ -7,7 +8,7 @@ from quantumsafe.ui import (
     lan_page, test_center, virtual_lab, ml_lab
 )
 
-st.set_page_config(page_title='QuantumSafe IoT Lab v0.3.1', page_icon='🔐',
+st.set_page_config(page_title=f'QuantumSafe IoT Lab v{APP_VERSION}', page_icon='🔐',
                    layout='wide', initial_sidebar_state='expanded')
 
 actor_id = st.session_state.get('actor_id')
@@ -22,9 +23,9 @@ except Exception:
     st.warning('Please sign in again. Your session may have expired.')
     st.stop()
 
-st.sidebar.title('🔐 QuantumSafe v0.3.1')
+st.sidebar.title(f'🔐 QuantumSafe v{APP_VERSION}')
 st.sidebar.caption(f"{actor['Username']} · {actor['RoleName']}")
-options = ['🏠 Dashboard']
+options = ['🏠 Dashboard', '📘 Start Here']
 if may_run(actor['RoleName']):
     options += ['🔒 Secure Demo', '🌐 LAN Lab', '🧩 Virtual Gateway', '🤖 ML Lab', '⚡ Run Benchmark', '🧪 Test Center']
 options += ['📊 Results']
@@ -35,9 +36,12 @@ if st.sidebar.button('🚪 Log out'):
     st.session_state.clear()
     st.rerun()
 st.sidebar.divider()
-st.sidebar.caption('Local HTTP virtual gateway with SQL-backed security event monitoring. Offline Edge-IIoTset RF inference; no live ML IDS or automatic blocking.')
+st.sidebar.caption('Local virtual IoT gateway + SQL monitoring + offline Edge-IIoTset RF. No live ML blocking.')
 
-if page == '🏠 Dashboard':
+if page == '📘 Start Here':
+    from quantumsafe.ui import start_here
+    start_here.show(actor)
+elif page == '🏠 Dashboard':
     dashboard.show(actor)
 elif page == '🔒 Secure Demo':
     demo.show(actor)

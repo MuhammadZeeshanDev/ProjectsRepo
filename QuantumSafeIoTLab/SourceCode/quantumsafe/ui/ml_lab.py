@@ -108,6 +108,19 @@ def show(actor):
 
     with t4:
         st.subheader('SA-HFS v3 Random Forest — 70/30')
+        from quantumsafe import ml_run_store
+        try:
+            history_ready = ml_run_store.is_initialized()
+            if not history_ready:
+                st.info('SQL run history is not initialized yet. You can still run predictions without it.')
+                if st.button('🗄️ Initialize ML history table (one time)',key='init_ml_history'):
+                    ml_run_store.initialize()
+                    st.success('ML run history enabled.')
+                    st.rerun()
+        except Exception as exc:
+            history_ready = False
+            st.warning(f'SQL ML history unavailable: {type(exc).__name__}')
+
         st.caption('Uses your existing saved model. No retraining or automatic gateway blocking.')
         st.warning('Metrics from arbitrary CSV rows are exploratory, not independent research validation.')
         import sklearn
@@ -122,6 +135,7 @@ def show(actor):
                     with st.spinner('Processing local CSV in batches. This can take a while...'):
                         result = predict_local_csv(local_path.strip().strip('"'))
                     st.session_state['edge_rf_result'] = result
+                    st.session_state['edge_rf_unsaved'] = True
                 elif uploaded is not None:
                     import tempfile
                     from pathlib import Path
@@ -142,6 +156,7 @@ def show(actor):
                         finally:
                             temp_path.unlink(missing_ok=True)
                     st.session_state['edge_rf_result'] = result
+                    st.session_state['edge_rf_unsaved'] = True
                 else:
                     st.error('Enter a local CSV path or upload a CSV.')
             except AttributeError as e:
@@ -151,6 +166,19 @@ def show(actor):
                     st.error(f'Prediction failed: {e}')
             except Exception as e:
                 st.error(f'Prediction failed: {e}')
+        if st.session_state.get('edge_rf_unsaved') and st.session_state.get('edge_rf_result') and history_ready:
+            try:
+                ml_run_store.insert_run(st.session_state['edge_rf_result'])
+                st.session_state['edge_rf_unsaved'] = False
+                st.success('ML run summary saved in SQL Server (no CSV data stored).')
+            except Exception as exc:
+                st.warning(f'Prediction succeeded but SQL history save failed: {type(exc).__name__}: {exc}')
+        with st.expander('📚 Previous ML runs in SQL Server'):
+            if history_ready:
+                try:
+                    st.dataframe(ml_run_store.recent_runs(50),hide_index=True,use_container_width=True)
+                except Exception as exc: st.warning(f'History unavailable: {type(exc).__name__}')
+            else: st.info('Initialize the SQL history table to see saved runs.')
         result = st.session_state.get('edge_rf_result')
         if result:
             st.success(f"Processed {result['rows']:,} records")

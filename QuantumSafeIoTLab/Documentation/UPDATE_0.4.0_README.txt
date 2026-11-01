@@ -1,0 +1,15 @@
+QuantumSafe v0.4.0 — IoT Lab Monitoring + Team Guide
+
+Install:
+1. Stop Streamlit.
+2. Put ONLY this ZIP in QuantumSafeIoTLab\Updates (move other ZIPs elsewhere).
+3. Run UPDATE_APP.bat and type YES.
+4. Start from project root with:
+   & "..\.venv\Scripts\python.exe" SourceCode\launch_large_csv.py
+5. Sign in. Open Start Here, Virtual Gateway, ML Lab and Dashboard.
+6. In ML Lab, click Initialize ML history table (one time) if SQL Server is ready.
+7. Run a compatible CSV. New run summary is saved in SQL; old runs are not automatically backfilled.
+
+No database schema is changed until you click the initialization button.
+The updater cannot change .gitignore; see GITHUB_PUBLISHING.md and verify your repository before publishing.
+If a previous update is missing, install v0.3.1 and v0.3.3 first; this ZIP assumes the already-working v0.3.3 app.
