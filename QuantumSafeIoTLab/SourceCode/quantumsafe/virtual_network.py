@@ -1,4 +1,5 @@
 """Loopback-only HTTP virtual IoT gateway. Not packet capture or network-wide firewall."""
+import uuid
 import hashlib
 import hmac
 import json
@@ -107,7 +108,7 @@ class VirtualGateway:
                 'Replay nonce detected': ('Replay attempt', 'Session freshness', 'Require unique nonces'),
                 'Rate limit: 8 requests per 10 seconds': ('Excessive requests', 'Gateway availability', 'Apply temporary throttling'),
             }.get(reason, ('No confirmed attack', 'Device telemetry', 'Continue monitoring'))
-            event = {'attack_type': attack_type, 'affected_component': affected, 'precaution': precaution, 'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
+            event = {'event_id':uuid.uuid4().hex, 'attack_type': attack_type, 'affected_component': affected, 'precaution': precaution, 'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
                      'request_type':'telemetry', 'source_ip':source_ip}
             self.events.appendleft(event)

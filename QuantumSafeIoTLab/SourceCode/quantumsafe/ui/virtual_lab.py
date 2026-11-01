@@ -6,6 +6,7 @@ from ..virtual_gateway_sim import SCENARIOS, evaluate
 from ..virtual_network import VirtualGateway
 from .. import gateway_event_store as sql_store
 from ..message_policy import assess_content
+from ..security_alerts import event_identity, alarm_eligible, next_alarm_event
 import base64, io, math, struct, wave
 import streamlit.components.v1 as components
 
@@ -49,18 +50,26 @@ def live_monitor(gateway):
         latest.columns = ['Device ID', 'Last seen (UTC)', 'Last decision']
         st.dataframe(latest, hide_index=True, use_container_width=True)
     st.caption('Last seen means a request was observed; it does NOT mean the device is currently connected.')
-    st.subheader('🚨 Security alerts')
-    st.caption('To enable audible alerts, click Enable sound & notifications once. Some browsers block automatic playback or embedded notifications.')
-    alerts = df[df['decision'] == 'BLOCK']
-    if alerts.empty:
-        st.success('No blocked requests in the current event window.')
-    else:
-        latest = alerts.iloc[0]
-        components.html(_alarm_html(str(latest['timestamp_utc']) + str(latest['device']) + str(latest['reason'])), height=85)
-        details = snapshot_events(gateway)
-        blocked_details = [e for e in details if e.get('decision') == 'BLOCK']
-        columns = ['timestamp_utc','device','source_ip','attack_type','affected_component','reason','precaution']
+    st.subheader('🚨 Security incidents')
+    st.caption('Sound is reserved for NEW blocked security incidents. Normal activity and unverified URL reviews never trigger an alarm.')
+    all_events = snapshot_events(gateway)
+    # A session begins with its current events as a baseline: old incidents must not replay.
+    if 'qs_alarm_seen_076' not in st.session_state:
+        st.session_state['qs_alarm_seen_076'] = [event_identity(e) for e in all_events[:200]]
+    seen = st.session_state['qs_alarm_seen_076']
+    fresh, seen = next_alarm_event(all_events, seen)
+    st.session_state['qs_alarm_seen_076'] = seen
+    if fresh is not None:
+        st.error('🚨 NEW BLOCKED INCIDENT: ' + str(fresh.get('attack_type') or fresh.get('reason') or 'Security violation'))
+    # The alarm control is always available, even when no incidents have happened.
+    components.html(_alarm_html(event_identity(fresh) if fresh else None,
+                                fresh.get('device', '') if fresh else ''), height=90)
+    blocked_details = [e for e in all_events if alarm_eligible(e)]
+    if blocked_details:
+        columns = ['timestamp_utc', 'device', 'source_ip', 'attack_type', 'affected_component', 'reason', 'precaution', 'decision']
         st.dataframe(pd.DataFrame(blocked_details).reindex(columns=columns), hide_index=True, use_container_width=True)
+    else:
+        st.success('No blocked security incidents in the current event window.')
     st.subheader('📋 Device-wise security report')
     from ..incident_reports import device_summary
     report_rows = device_summary(snapshot_events(gateway), gateway.registered_devices)
@@ -74,40 +83,47 @@ def live_monitor(gateway):
 
 
 
-def _alarm_html(event_key):
-    """Client-side audio/notification; browser requires user gesture to unlock sound."""
+def _alarm_html(event_key=None, target_device=''):
+    """Alarm UI: a new eligible event is emitted once by Python's session ledger.
+
+    The browser may still require a user gesture for audio and notifications.
+    """
     import json
-    key = json.dumps(str(event_key))
-    return """<div style='font-family:sans-serif'>
-    <button id='enable'>🔔 Enable sound & notifications</button>
+    key = json.dumps(event_key or '')
+    target = json.dumps(str(target_device))
+    html = """<div style='font-family:sans-serif'>
+    <button id='enable'>🔔 Enable sound / notifications</button>
     <button id='play'>🔊 Test alarm</button>
-    <span id='status' style='font-size:12px'>Browser permission may be required.</span>
+    <span id='status' style='font-size:12px'>Enable once; browser permissions may apply.</span>
     </div><script>
-    const eventKey=KEY;
+    const eventKey=EVENT_KEY, device=TARGET_DEVICE;
     const status=document.getElementById('status');
     function alarm(){
-      try { const C=window.AudioContext||window.webkitAudioContext; const c=new C();
-        c.resume().then(()=>{for(let i=0;i<4;i++){
-          const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+i*0.23;
-          o.type='square';o.frequency.value=(i%2?1250:950);
-          g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.13,t+0.02);
-          g.gain.exponentialRampToValueAtTime(0.0001,t+0.19);
-          o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+0.2);
-        }});
+      try {const C=window.AudioContext||window.webkitAudioContext;const c=new C();
+        c.resume().then(()=>{for(let i=0;i<3;i++){
+          const o=c.createOscillator(),g=c.createGain(),t=c.currentTime+i*0.26;
+          o.type='square';o.frequency.value=(i%2?1400:1100);
+          g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.11,t+0.02);
+          g.gain.exponentialRampToValueAtTime(0.0001,t+0.20);
+          o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+0.21);
+        }}).catch(()=>{status.textContent='Audio blocked: use Test alarm.';});
       } catch(e){status.textContent='Audio unavailable: '+e.message;}
     }
     document.getElementById('play').onclick=alarm;
     document.getElementById('enable').onclick=async()=>{
-      alarm();if('Notification' in window){try {await Notification.requestPermission();}catch(e){}}
-      status.textContent='Sound test played. Keep browser tab open; auto-play depends on browser settings.';
+      alarm();if('Notification' in window){try{await Notification.requestPermission();}catch(e){}}
+      status.textContent='Alarm test sent. Automatic audio depends on browser permissions.';
     };
-    if(eventKey && eventKey!=='none'){
+    // No eventKey means there is NO security alarm, even on fragment refresh.
+    if(eventKey){
       alarm();
       if('Notification' in window && Notification.permission==='granted'){
-        try{new Notification('QuantumSafe: blocked request',{body:'Security event detected. Open PC A alerts.'});}catch(e){}
+        try{new Notification('QuantumSafe: security request blocked',
+          {body:'Target: '+device+' — view incident details in PC A.'});}catch(e){}
       }
     }
-    </script>""".replace('KEY',key)
+    </script>"""
+    return html.replace('EVENT_KEY', key).replace('TARGET_DEVICE', target)
 
 def message_test(gateway):
     st.subheader('🔎 Optional message / URL screening (offline)')
@@ -126,8 +142,7 @@ def message_test(gateway):
                     gateway.last_persist_error=f'{type(exc).__name__}: {exc}'
             if event['decision']=='BLOCK':
                 st.error('🔴 BLOCK — '+event['reason'])
-                components.html(_alarm_html(event['timestamp_utc'] + event['reason']),height=85)
-                st.warning('If you hear no sound, click the audio play control. Browsers can prevent automatic sound.')
+                st.info('Blocked incident recorded. The live security panel handles its alarm once; browser audio permissions may apply.')
             elif event['decision']=='REVIEW':
                 st.warning('🟡 REVIEW — '+event['reason']+' (not proof of malware)')
             else:
