@@ -22,7 +22,7 @@ def _event_frame(gateway):
 
 @st.fragment(run_every='3s')
 def live_monitor(gateway):
-    st.subheader('📊 Live monitoring · refresh every 3 seconds')
+    st.subheader('📊 Device activity · refresh every 3 seconds')
     df = _event_frame(gateway)
     allow = int((df['decision'] == 'ALLOW').sum()) if not df.empty else 0
     blocked = int((df['decision'] == 'BLOCK').sum()) if not df.empty else 0
@@ -98,7 +98,7 @@ def message_test(gateway):
 
 def show(actor):
     from ..version import APP_VERSION
-    st.title(f'🧩 Virtual IoT Security Gateway · v{APP_VERSION}')
+    st.title(f'🛡️ IoT Devices & Security · v{APP_VERSION}')
     st.info('LOCAL TEST LAB: HTTP requests to 127.0.0.1 only. Rule-based gateway monitoring; the Edge-IIoTset ML model is a separate offline CSV analysis tool.')
     gateway = get_gateway()
     st.subheader('🗄️ SQL Server event storage')
@@ -133,25 +133,44 @@ def show(actor):
         st.warning('Local HTTP gateway stopped.')
     st.metric('Gateway status', f'Running on 127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
     st.caption('Independent attacker console: open a second terminal and run SourceCode/attacker_console.py. It uses port 8765 and receives NO trusted credentials. Localhost is one PC, not a separate network host.')
-    message_test(gateway)
+    if actor['RoleName']=='Admin':
+        message_test(gateway)
     st.divider()
-    st.subheader('🌐 Send a virtual device request')
-    scenario = st.selectbox('Virtual client / test',
-        ['CCTV', 'Router', 'Sensor', 'Unauthorized access', 'Tampered message', 'Replay attack', 'Rate limit'])
-    if st.button('▶️ Send request', type='primary', disabled=not bool(gateway.server)):
-        try:
-            event = gateway.send(scenario)
-            message = f"{event['decision']} — {event['reason']}"
-            (st.success if event['decision'] == 'ALLOW' else st.error)(message)
-        except Exception as exc:
-            st.error(f'Local request failed: {exc}')
-    st.caption('Replay and rate-limit tests may generate multiple events. Rate-limit window is 10 seconds.')
-    if gateway.last_persist_error:
-        st.error('Last SQL event save failed: ' + gateway.last_persist_error)
-    with st.expander('🧪 Why was this request allowed or blocked?'):
-        st.write('CCTV/Router/Sensor: valid token + valid HMAC signature + unused nonce + within rate limit → ALLOW.')
-        st.write('Unauthorized: wrong token → BLOCK. Tampered: message changed after signing → BLOCK. Replay: reused nonce → BLOCK. Rate limit: more than 8 requests per 10 seconds → BLOCK.')
-        st.caption('These are application-level HTTP rules, NOT Random Forest predictions or captured network packets.')
+    st.subheader('📡 Registered virtual devices')
+    st.dataframe(pd.DataFrame([{'Device ID':k,'Device':v,'Connection':'Virtual / registered','KEM capability':'Enabled in lab'} for k,v in gateway.registered_devices.items()]),hide_index=True,use_container_width=True)
+    st.caption('Registered means configured in this virtual gateway; not proof of a physical connection. KEM capability is a lab assumption, not a completed handshake.')
+    if actor['RoleName']=='Admin':
+        st.subheader('🔐 Test ML-KEM on every virtual device')
+        if st.button('Run secure connection checks (all devices)'):
+            from ..crypto_engine import self_test, ALGORITHMS
+            results=[]
+            for device in gateway.registered_devices:
+                for algorithm in ALGORITHMS:
+                    try:
+                        outcome=self_test(algorithm)
+                        results.append({'Device':device,'KEM':algorithm,'Result':'PASS' if outcome['passed'] else 'FAIL','Detail':'Local key agreement verified'})
+                    except Exception as exc:
+                        results.append({'Device':device,'KEM':algorithm,'Result':'FAIL','Detail':type(exc).__name__+': '+str(exc)[:120]})
+            st.dataframe(pd.DataFrame(results),hide_index=True,use_container_width=True)
+            st.warning('These checks run a fresh local cryptographic self-test per virtual device and KEM type. They do not prove a remote device connection, identity authentication, or encrypted IoT telemetry.')
+    if actor['RoleName']=='Admin':
+        st.subheader('🧪 Security tests (Administrator)')
+        scenario = st.selectbox('Virtual client / test',
+            ['CCTV', 'Router', 'Sensor', 'Unauthorized access', 'Tampered message', 'Replay attack', 'Rate limit'])
+        if st.button('▶️ Send request', type='primary', disabled=not bool(gateway.server)):
+            try:
+                event = gateway.send(scenario)
+                message = f"{event['decision']} — {event['reason']}"
+                (st.success if event['decision'] == 'ALLOW' else st.error)(message)
+            except Exception as exc:
+                st.error(f'Local request failed: {exc}')
+        st.caption('Replay and rate-limit tests may generate multiple events. Rate-limit window is 10 seconds.')
+        if gateway.last_persist_error:
+            st.error('Last SQL event save failed: ' + gateway.last_persist_error)
+        with st.expander('🧪 Why was this request allowed or blocked?'):
+            st.write('CCTV/Router/Sensor: valid token + valid HMAC signature + unused nonce + within rate limit → ALLOW.')
+            st.write('Unauthorized: wrong token → BLOCK. Tampered: message changed after signing → BLOCK. Replay: reused nonce → BLOCK. Rate limit: more than 8 requests per 10 seconds → BLOCK.')
+            st.caption('These are application-level HTTP rules, NOT Random Forest predictions or captured network packets.')
     live_monitor(gateway)
     st.divider()
     st.subheader('📚 Persistent SQL Server event history')

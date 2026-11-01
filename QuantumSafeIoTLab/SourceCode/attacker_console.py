@@ -5,9 +5,12 @@ from quantumsafe.attacker_client import TESTS, send_test
 st.set_page_config(page_title='QuantumSafe — Virtual PC B', page_icon='🧪')
 st.title('🧪 Virtual PC B — Independent Test Console')
 st.warning('Authorized LOCAL lab only. Requests are restricted to 127.0.0.1:8765. No access to defender secrets.')
-st.write('Target: Virtual CCTV 01 | Gateway: localhost port 8765')
+st.write('**Target:** Virtual CCTV 01  |  **Gateway:** 127.0.0.1:8765')
+st.info('Step 1: Choose a controlled test. Step 2: Review the request. Step 3: Send it. Step 4: Inspect defender alerts and event history.')
 selected = st.selectbox('Choose controlled test', list(TESTS), format_func=lambda k: TESTS[k])
-if st.button('▶ Run test', type='primary'):
+st.markdown('**What PC B sends:** a telemetry request naming CCTV-01, with an untrusted token and no valid device signature. PC B never receives the defender key.')
+st.caption('The gateway first checks device registration, then credentials and message integrity. The response records why access was denied.')
+if st.button('▶ Send test request', type='primary'):
     try:
         results = send_test(selected)
         for event in results:

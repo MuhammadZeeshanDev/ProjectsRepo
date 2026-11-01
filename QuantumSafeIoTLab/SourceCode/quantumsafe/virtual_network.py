@@ -22,10 +22,11 @@ class VirtualGateway:
         self.server = None
         self.thread = None
         self.port = None
+        self.registered_devices = {'virtual-cctv-01':'CCTV camera', 'virtual-router-01':'Router', 'virtual-sensor-01':'Temperature sensor'}
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
 
-    def start(self, port=0):
+    def start(self, port=8765):
         if self.server:
             return self.port
         gateway = self
@@ -82,6 +83,8 @@ class VirtualGateway:
         with self.lock:
             if not authenticated:
                 decision, reason = 'BLOCK', 'Invalid device token'
+            elif device not in self.registered_devices:
+                decision, reason = 'BLOCK', 'Device is not registered'
             elif not device or not nonce or not isinstance(value,(int,float,str)) or isinstance(value,bool):
                 decision, reason = 'BLOCK', 'Invalid telemetry'
             elif not hmac.compare_digest(signature, self.sign(device,nonce,value)):

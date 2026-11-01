@@ -14,18 +14,20 @@ except Exception:
     st.session_state.pop('actor_id',None)
     st.warning('Sign in again.'); st.stop()
 st.sidebar.title(f'🔐 QuantumSafe v{APP_VERSION}')
-st.sidebar.caption(f"{actor['Username']} · {actor['RoleName']}")
+st.sidebar.caption(f"{actor['Username']} · {'Administrator' if actor['RoleName']=='Admin' else 'Security Operator' if actor['RoleName']=='Researcher' else 'Read-only Observer'}")
 options=['🏠 Overview']
 if may_run(actor['RoleName']):
-    options+=['🧩 Gateway & Alerts','🤖 ML Detection','🔒 ML-KEM Secure Demo','🌐 LAN Lab']
-if may_manage_users(actor['RoleName']):options+=['👥 Manage Users']
+    options+=['🛡️ Device Security & Tests']
+if actor['RoleName']=='Admin':
+    options+=['🤖 Model Training','🔒 Secure Connection Lab','🌐 LAN Lab']
+if may_manage_users(actor['RoleName']):options+=['👥 Team Accounts']
 page=st.sidebar.radio('Lab screens',options,key='nav_page')
 if st.sidebar.button('🚪 Log out'):
     st.session_state.clear();st.rerun()
 st.sidebar.caption('Virtual demonstrations only · not a browser firewall')
 if page=='🏠 Overview':dashboard.show(actor)
-elif page=='🧩 Gateway & Alerts':virtual_lab.show(actor)
-elif page=='🤖 ML Detection':ml_lab.show(actor)
-elif page=='🔒 ML-KEM Secure Demo':demo.show(actor)
+elif page=='🛡️ Device Security & Tests':virtual_lab.show(actor)
+elif page=='🤖 Model Training':ml_lab.show(actor)
+elif page=='🔒 Secure Connection Lab':demo.show(actor)
 elif page=='🌐 LAN Lab':lan_page.show(actor)
-elif page=='👥 Manage Users':admin_page.show(actor)
+elif page=='👥 Team Accounts':admin_page.show(actor)
