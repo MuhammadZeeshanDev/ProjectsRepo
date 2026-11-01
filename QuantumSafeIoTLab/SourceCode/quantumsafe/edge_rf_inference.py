@@ -7,7 +7,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_PATH = ROOT / 'Assets' / 'EdgeIIoT_RF_70_30' / 'SA_HFS_v3__Random_Forest_Model.joblib'
-MAX_BYTES = 60 * 1024 * 1024
+MAX_BYTES = 1024 * 1024 * 1024
 
 
 def load_checkpoint():
@@ -38,7 +38,7 @@ def _cached_checkpoint(digest):
 
 def predict_csv(raw: bytes, max_rows=10000):
     if not raw or len(raw) > MAX_BYTES:
-        raise ValueError('Upload a nonempty CSV smaller than 60 MB.')
+        raise ValueError('Upload a nonempty CSV smaller than 1 GB.')
     checkpoint = load_checkpoint()
     cols = list(checkpoint['features'])
     df = pd.read_csv(io.BytesIO(raw), nrows=max_rows, low_memory=False)
@@ -122,8 +122,9 @@ def predict_local_csv(path, chunk_size=10000, progress=None):
             chunk = chunk.copy()
             chunk['QuantumSafe_Prediction'] = predictions
             chunk.to_csv(output_path, mode='a', header=(total == 0), index=False)
-            if len(preview) < 100:
-                preview.append(chunk.head(100 - len(preview)).copy())
+            if sum(len(p) for p in preview) < 100:
+                remaining = 100 - sum(len(p) for p in preview)
+                preview.append(chunk.head(remaining).copy())
             total += len(chunk)
             for label in (0,1):
                 counts[label] += int((predictions == label).sum())

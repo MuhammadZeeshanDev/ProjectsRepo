@@ -1,0 +1,15 @@
+QuantumSafe v0.3.3 — large CSV browser upload fix
+
+The 60 MB restriction was present in TWO places: Streamlit's upload configuration and app UI code. This update changes the app UI and adds a large-file launcher. UPDATE_APP.bat does not allow changing START_MAIN_APP.bat or root .streamlit config, so you MUST launch with the command below to raise Streamlit's server upload cap.
+
+1. Stop Streamlit, place ONLY this ZIP in Updates, run UPDATE_APP.bat and type YES.
+2. In project root PowerShell run:
+   & "..\.venv\Scripts\python.exe" SourceCode\launch_large_csv.py
+3. Open http://127.0.0.1:8501 and select ML Lab > Edge-IIoTset RF Prediction.
+4. Choose CSV in upload button (max 1 GB); press Run saved Random Forest.
+
+Browser uploads still require a local CSV file on your Windows computer. If data is only in Google Drive/Colab, download Edge_IIoTset_Cleaned.csv first, or use Colab to export a compatible sample. The local-path mode accepts files beyond 1 GB without browser upload.
+
+This update does not change sklearn; use a version compatible with the saved trusted model. It does not retrain models, modify SQL Server, or enable live gateway blocking. Metrics on arbitrary data are exploratory.
+
+WARNING: 1GB browser uploads require substantial RAM and can fail if PC memory is insufficient. Prefer local path for huge files. App loads only trusted bundled model.

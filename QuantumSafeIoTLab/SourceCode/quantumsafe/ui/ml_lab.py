@@ -7,8 +7,8 @@ import streamlit as st
 BASE = Path(__file__).resolve().parents[3]
 STORE = BASE / 'ML_Artifacts'
 DB = STORE / 'registry.sqlite3'
-MAX_UPLOAD = 60 * 1024 * 1024
-MAX_EXTRACT = 120 * 1024 * 1024
+MAX_UPLOAD = 1024 * 1024 * 1024
+MAX_EXTRACT = 1024 * 1024 * 1024
 
 def connection():
     STORE.mkdir(parents=True, exist_ok=True)
@@ -21,7 +21,7 @@ def safe_name(s):
     return re.sub(r'[^a-zA-Z0-9_.-]', '_', str(s))[:100]
 
 def import_artifact(name, dataset, algorithm, file_name, data, features, notes):
-    if not data or len(data) > MAX_UPLOAD: raise ValueError('Model file empty or over 60 MB. Use a smaller checkpoint or offline import later.')
+    if not data or len(data) > 60 * 1024 * 1024: raise ValueError('Model checkpoint exceeds 60 MB; this restriction is for model imports only.')
     ext = Path(file_name).suffix.lower()
     if ext not in ('.joblib','.pkl','.json','.ubj','.txt','.onnx','.zip'): raise ValueError('Unsupported model file type.')
     if ext == '.zip':
@@ -41,7 +41,7 @@ def import_artifact(name, dataset, algorithm, file_name, data, features, notes):
 
 def profile_csv(raw, label):
     import pandas as pd
-    if len(raw)>MAX_UPLOAD: raise ValueError('Dataset over 60 MB. Use a smaller sample for profiling.')
+    if not raw: raise ValueError('Dataset is empty.')
     frame=pd.read_csv(io.BytesIO(raw),nrows=10000,low_memory=False)
     if frame.empty: raise ValueError('No records found')
     st.caption('Preview limited to first 10,000 records; statistics describe this sample, not necessarily the full dataset.')
@@ -59,26 +59,27 @@ def show(actor):
     st.info('Research notebook is not automatically a trained model. Import exported checkpoints separately. Imported .pkl/.joblib files are stored but NEVER executed here.')
     t1,t2,t3,t4=st.tabs(['📂 Dataset profile','📥 Import model','📋 Model registry','🎯 Edge-IIoTset RF Prediction'])
     with t1:
-        upload=st.file_uploader('CSV or ZIP containing CSV (max 60 MB upload)',type=['csv','zip'],key='ml_dataset')
-        if upload:
-            data=upload.getvalue()
-            if len(data)>MAX_UPLOAD: st.error('File exceeds 60 MB limit')
-            else:
-                try:
-                    if upload.name.lower().endswith('.zip'):
-                        with zipfile.ZipFile(io.BytesIO(data)) as z:
-                            candidates=[x for x in z.infolist() if not x.is_dir() and x.filename.lower().endswith('.csv') and not x.filename.startswith('/') and '..' not in Path(x.filename).parts and x.file_size<=MAX_UPLOAD]
-                            if not candidates: raise ValueError('No CSV under 60 MB uncompressed found in ZIP')
-                            chosen=st.selectbox('Choose CSV',range(len(candidates)),format_func=lambda i:candidates[i].filename)
-                            with z.open(candidates[chosen]) as f: raw=f.read(MAX_UPLOAD+1)
-                    else: raw=data
-                    if len(raw)>MAX_UPLOAD: raise ValueError('CSV too large')
-                    import pandas as pd
-                    cols=pd.read_csv(io.BytesIO(raw),nrows=0).columns.tolist()
-                    label=st.selectbox('Class label (optional)',['(none)']+cols)
-                    if st.button('Analyze dataset'):
-                        profile_csv(raw,None if label=='(none)' else label)
-                except Exception as e: st.error(f'Cannot read dataset: {e}')
+        st.caption('Dataset profile: previews first 10,000 rows. For large datasets use the Prediction tab for full processing.')
+        upload=st.file_uploader('Choose CSV for sample profiling (up to 1 GB with large-file launcher)',type=['csv'],key='ml_dataset')
+        if upload is not None:
+            try:
+                import pandas as pd
+                upload.seek(0)
+                cols=pd.read_csv(upload,nrows=0).columns.tolist()
+                label=st.selectbox('Class label (optional)',['(none)']+cols)
+                if st.button('Analyze dataset'):
+                    upload.seek(0)
+                    frame=pd.read_csv(upload,nrows=10000,low_memory=False)
+                    if frame.empty: raise ValueError('CSV is empty')
+                    st.caption('Statistics below describe only the first 10,000 rows.')
+                    a,b,c=st.columns(3)
+                    a.metric('Sample rows',len(frame));b.metric('Columns',len(frame.columns));c.metric('Duplicate sample rows',int(frame.duplicated().sum()))
+                    st.dataframe(frame.head(20),use_container_width=True)
+                    stats=pd.DataFrame({'column':frame.columns,'type':[str(t) for t in frame.dtypes],'missing':[int(frame[x].isna().sum()) for x in frame.columns]})
+                    st.dataframe(stats,use_container_width=True)
+                    if label != '(none)': st.bar_chart(frame[label].astype(str).value_counts().head(30))
+                    st.download_button('Download sample quality report',stats.to_csv(index=False).encode(),'quality_report.csv','text/csv')
+            except Exception as e: st.error(f'Cannot profile CSV: {e}')
     with t2:
         with st.form('import_model'):
             name=st.text_input('Model name',placeholder='Edge-IIoTset RF SA-HFS K12')
@@ -111,9 +112,9 @@ def show(actor):
         st.warning('Metrics from arbitrary CSV rows are exploratory, not independent research validation.')
         import sklearn
         st.caption(f'Installed scikit-learn: {sklearn.__version__}')
-        st.info('Large CSV: use the local file path below. Data is read in 10,000-row batches; no 60 MB upload limit applies to local paths.')
+        st.info('Upload a large Edge-IIoTset CSV (up to 1 GB when launched with the large-file command), or enter its local Windows path. Predictions process 10,000 rows at a time.')
         local_path = st.text_input('Local CSV full path (Windows)', placeholder=r'D:\Datasets\Edge_IIoTset_Cleaned.csv', key='edge_rf_local_path')
-        uploaded = st.file_uploader('Or upload a small Edge-IIoTset CSV (60 MB limit)', type=['csv'], key='edge_rf_csv')
+        uploaded = st.file_uploader('Or upload Edge-IIoTset CSV (up to 1 GB with large-file launcher)', type=['csv'], key='edge_rf_csv')
         if st.button('▶ Run saved Random Forest', key='edge_rf_run'):
             try:
                 from quantumsafe.edge_rf_inference import predict_local_csv, predict_csv
@@ -122,13 +123,25 @@ def show(actor):
                         result = predict_local_csv(local_path.strip().strip('"'))
                     st.session_state['edge_rf_result'] = result
                 elif uploaded is not None:
-                    with st.spinner('Predicting uploaded sample...'):
-                        output, metrics = predict_csv(uploaded.getvalue())
-                    st.session_state['edge_rf_result'] = {
-                        'rows':len(output),
-                        'counts':{0:int((output['QuantumSafe_Prediction']==0).sum()), 1:int((output['QuantumSafe_Prediction']==1).sum())},
-                        'metrics':metrics, 'preview':output.head(100),
-                        'csv_bytes':output.to_csv(index=False).encode('utf-8')}
+                    import tempfile
+                    from pathlib import Path
+                    with st.spinner('Saving upload temporarily and predicting in 10,000-row batches...'):
+                        with tempfile.NamedTemporaryFile(prefix='quantumsafe_uploaded_', suffix='.csv', delete=False) as tmp:
+                            temp_path = Path(tmp.name)
+                            try:
+                                uploaded.seek(0)
+                                while True:
+                                    block = uploaded.read(4 * 1024 * 1024)
+                                    if not block: break
+                                    tmp.write(block)
+                            except Exception:
+                                temp_path.unlink(missing_ok=True)
+                                raise
+                        try:
+                            result = predict_local_csv(str(temp_path))
+                        finally:
+                            temp_path.unlink(missing_ok=True)
+                    st.session_state['edge_rf_result'] = result
                 else:
                     st.error('Enter a local CSV path or upload a CSV.')
             except AttributeError as e:
