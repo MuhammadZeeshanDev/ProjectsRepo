@@ -94,21 +94,21 @@ def _windows_player(event):
     errors = []
     # Prefer system-alert audio, which follows the Windows sound configuration.
     try:
-        winsound.PlaySound('SystemExclamation', winsound.SND_ALIAS | winsound.SND_SYNC)
+        winsound.PlaySound('SystemExclamation', winsound.SND_ALIAS)  # synchronous by default; SND_SYNC does not exist
         # SND_ALIAS may silently map to no sound when Windows scheme is muted.
         # Beep adds a second audible signal if supported by the audio driver.
         try:
             for hz in (1050, 1350, 1050):
                 winsound.Beep(hz, 220)
-        except (RuntimeError, OSError) as exc:
+        except (RuntimeError, OSError, AttributeError) as exc:
             errors.append(str(exc))
         return True
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, OSError, AttributeError) as exc:
         errors.append(str(exc))
     try:
         for hz in (1050, 1350, 1050):
             winsound.Beep(hz, 220)
         return True
-    except (RuntimeError, OSError) as exc:
+    except (RuntimeError, OSError, AttributeError) as exc:
         errors.append(str(exc))
     raise RuntimeError('Windows sound failed: ' + '; '.join(errors))
