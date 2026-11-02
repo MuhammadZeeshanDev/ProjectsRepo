@@ -49,50 +49,120 @@ def _admin_alert_tools(actor):
                            file_name='quantumsafe_virtual_gateway_events.csv',mime='text/csv')
 
 
+def _viewer_session(gateway, actor, session, clock=None):
+    """Issue a short-lived authorized viewer token only for a capable v2 gateway.
+
+    An older cached VirtualGateway instance must NEVER cause a monitoring crash,
+    and must NEVER be replaced with an unprotected public viewer endpoint.
+    """
+    import time
+    clock = clock or time.time
+    required = ('issue_viewer', 'valid_viewer', 'viewer_state')
+    if any(not callable(getattr(gateway, attr, None)) for attr in required):
+        return None
+    current = clock()
+    state = session.get('qs_monitor_viewer')
+    healthy = (isinstance(state, dict) and state.get('gateway') == id(gateway)
+               and isinstance(state.get('token'), str) and state.get('expires', 0) > current + 60)
+    if healthy:
+        try:
+            healthy = gateway.valid_viewer(state['token'])
+        except (AttributeError, TypeError, ValueError):
+            healthy = False
+    if not healthy:
+        # The calling UI has already checked the actor with users.active_actor().
+        new_token = gateway.issue_viewer(actor)
+        state = {'token': new_token, 'expires': current + 1200,
+                 'gateway': id(gateway)}
+        session['qs_monitor_viewer'] = state
+    return state
+
+
+def _read_only_fallback(gateway):
+    """Fallback is rendered only inside an authenticated Streamlit page."""
+    try:
+        data, _ = security_console.collect()
+        components.html(security_console.render_html(data), height=1080, scrolling=True)
+    except Exception as exc:
+        # The old gateway may not provide the new registry fields either.
+        st.warning('Detailed dashboard unavailable: ' + type(exc).__name__ + '. Restart application after applying compatibility update.')
+        events = list(getattr(gateway, 'events', ()))[:50]
+        if events:
+            safe = [{k: e.get(k) for k in ('timestamp_utc', 'device', 'decision', 'reason', 'source_ip')}
+                    for e in events if isinstance(e, dict)]
+            st.dataframe(safe, use_container_width=True)
+        else:
+            st.info('No virtual gateway observations yet.')
+
+
 def show(actor):
     st.title(f'🛡 QuantumSafe Security Console · v{APP_VERSION}')
     st.caption(f"Logged in: {actor.get('Username','User')} · {'Administrator' if actor.get('RoleName')=='Admin' else 'Security Operator'}")
-    st.info('Reference dashboard design integrated with the existing QuantumSafe virtual gateway. Device enrollment and PC B remain in their Administrator panels. The network map is a logical visualization.')
+    st.info('This is a local virtual gateway. Registered devices and PC B remain separate Administrator tools; the topology is a logical map.')
     from .virtual_lab import get_gateway
-    gateway=get_gateway()
-    if gateway.server:
-        # Keep the browser iframe mounted: it polls the local gateway every 3 s,
-        # avoiding the full iframe recreation/flicker of the previous release.
-        import time
-        state=st.session_state.get('qs_monitor_viewer')
-        if not state or state['expires']<time.time()+60 or state['gateway']!=id(gateway):
-            new_token=gateway.issue_viewer(actor)
-            state={'token':new_token,'expires':time.time()+1200,'gateway':id(gateway)}
-            st.session_state['qs_monitor_viewer']=state
-        components.iframe(f'http://127.0.0.1:{gateway.port}/viewer/{state["token"]}',height=1160,scrolling=True)
-        st.caption('Live viewer refreshes its data without rebuilding the dashboard. Enable browser audio with 🔇 Sound off. Server alarm works independently.')
+    gateway = get_gateway()
+    gateway_running = bool(getattr(gateway, 'server', None))
+    if gateway_running:
+        try:
+            state = _viewer_session(gateway, actor, st.session_state)
+            port = getattr(gateway, 'port', None)
+            if state and port:
+                components.iframe(f'http://127.0.0.1:{int(port)}/viewer/{state["token"]}',
+                                  height=1160, scrolling=True)
+                st.caption('Live viewer uses short-lived access token; browser sound must be enabled by clicking its sound button.')
+            else:
+                # No passwordless fallback on :8765. Only this authenticated UI
+                # shows a server-side snapshot until the correct gateway loads.
+                st.warning('Running gateway is an older version without authenticated live-view support. Monitoring is in safe read-only mode. Close Streamlit/PC B fully, apply v2.0.1, then restart.')
+                _read_only_fallback(gateway)
+        except (AttributeError, KeyError, ValueError, TypeError, PermissionError) as exc:
+            st.warning('Viewer could not start (' + type(exc).__name__ + '). Showing safe read-only monitoring. Restart the application after upgrading.')
+            _read_only_fallback(gateway)
     else:
-        st.warning('Virtual gateway is stopped. Administrator: open Devices & Installation and start it to view live console.')
-        data,_=security_console.collect()
-        components.html(security_console.render_html(data),height=1080,scrolling=True)
+        st.warning('Virtual gateway is stopped. Administrator: open Devices & Installation and start it for live monitoring.')
+        _read_only_fallback(gateway)
+
     _live_metrics()
-    st.subheader('🧠 IDS/IPS Runtime (observed, not simulated packet counts)')
-    a,b,c=st.columns(3)
-    a.metric('Local virtual containment',len([q for q in gateway.ips.entries() if q['active']]))
-    state=gateway.live_shadow.snapshot()
-    b.metric('Shadow ML readings assessed',state['processed'])
-    c.metric('Shadow ML matches',state['matches'])
-    st.caption('Gateway HMAC/replay/rate-limit rules enforce virtual HTTP requests. ML is shadow-only and does not block network packets.')
-    if state['last_error']:st.warning('ML shadow issue: '+state['last_error'])
-    if state['incompatible']:st.info(f"{state['incompatible']} model route(s) incompatible with observed HTTP telemetry fields. Full TCP/MQTT capture is not present.")
-    _admin_alert_tools(actor)
+    st.subheader('🧠 IDS/IPS Runtime (observed virtual events)')
+    ips = getattr(gateway, 'ips', None)
+    try:
+        contained = sum(1 for x in ips.entries() if x.get('active')) if ips else None
+    except Exception:
+        contained = None
+    shadow = getattr(gateway, 'live_shadow', None)
+    try:
+        shadow_state = shadow.snapshot() if shadow else {}
+    except Exception:
+        shadow_state = {}
+    a,b,c = st.columns(3)
+    a.metric('Local virtual containment', contained if contained is not None else 'Not loaded')
+    b.metric('Shadow ML readings assessed', shadow_state.get('processed', 'Not loaded'))
+    c.metric('Shadow ML matches', shadow_state.get('matches', 'Not loaded'))
+    st.caption('Gateway rules reject unauthorized virtual HTTP telemetry. Shadow ML does not block real network traffic.')
+    if shadow_state.get('last_error'):
+        st.warning('ML shadow issue: ' + str(shadow_state['last_error']))
+    if shadow_state.get('incompatible'):
+        st.info(f"{shadow_state['incompatible']} model route(s) have incompatible features. No TCP/MQTT capture is present.")
+    try:
+        _admin_alert_tools(actor)
+    except (AttributeError, KeyError, ValueError, TypeError) as exc:
+        st.warning('Alert tools unavailable in this runtime: ' + type(exc).__name__)
     if actor.get('RoleName')=='Admin':
         with st.expander('🔎 System readiness & diagnostics'):
-            state=gateway.alarm_engine
-            d1,d2,d3=st.columns(3)
-            d1.metric('Alarm played',state.played)
-            d2.metric('Alarm failures',state.failures)
-            d3.metric('Virtual IPS active',len([q for q in gateway.ips.entries() if q['active']]))
-            if state.last_error:st.error('Windows alarm problem: '+state.last_error)
-            if gateway.last_persist_error:st.error('SQL event save issue: '+gateway.last_persist_error)
+            alarms = getattr(gateway, 'alarm_engine', None)
+            d1,d2,d3 = st.columns(3)
+            d1.metric('Alarm played', getattr(alarms, 'played', 'Not loaded'))
+            d2.metric('Alarm failures', getattr(alarms, 'failures', 'Not loaded'))
+            d3.metric('Virtual IPS active', contained if contained is not None else 'Not loaded')
+            if alarms and getattr(alarms, 'last_error', None):
+                st.error('Windows alarm problem: ' + str(alarms.last_error))
+            if getattr(gateway, 'last_persist_error', None):
+                st.error('SQL event save issue: ' + str(gateway.last_persist_error))
+            if not callable(getattr(gateway, 'issue_viewer', None)):
+                st.error('Gateway/dashboard version mismatch: issue_viewer() is missing from the running gateway object. Completely stop both Python/Streamlit processes, install v2.0.1, restart.')
             try:
                 from ..ml_engine.selector import find_swipl
-                st.write('SWI-Prolog executable:',find_swipl() or 'Not detected (Python rules fallback)')
-            except Exception as exc:st.warning('Prolog runtime check: '+str(exc))
-            st.caption('For complete end-to-end demo: Devices & Installation → device tests → PC B → review Monitoring alerts and alarm diagnostics.')
-    st.caption('ML ranking is shadow-only. Virtual HTTP request rejections do not equal network-wide IPS/firewall enforcement.')
+                st.write('SWI-Prolog executable:', find_swipl() or 'Not detected (Python fallback)')
+            except (ImportError, AttributeError, OSError) as exc:
+                st.warning('Prolog runtime check: ' + str(exc))
+    st.caption('Localhost virtual IDS/IPS only. Does not imply router-level protection.')
