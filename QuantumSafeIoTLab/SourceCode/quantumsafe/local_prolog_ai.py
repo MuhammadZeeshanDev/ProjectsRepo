@@ -42,11 +42,23 @@ def normalize_evidence(training=None, events=None, devices=None, models=None):
     device_rows = [x for x in (devices or [])[:1000] if isinstance(x, dict)]
     model_rows = [x for x in (models or [])[:1000] if isinstance(x, dict)]
     device_states = Counter(str(x.get('status','')).lower() for x in device_rows)
+    # Evidence from persisted locally trained checkpoints (not an instruction).
+    candidates = sum(x.get('status') == 'reviewed_candidate' for x in model_rows)
+    weak_models = 0
+    for model in model_rows:
+        metrics = model.get('metrics') or {}
+        if not isinstance(metrics, dict):continue
+        this_f1 = _finite_number(metrics.get('macro_f1'))
+        this_fpr = _finite_number(metrics.get('false_positive_rate'))
+        if (this_f1 is not None and this_f1 < 0.80) or (this_fpr is not None and this_fpr > 0.05):
+            weak_models += 1
     return {
         'active_devices': device_states.get('active', 0),
         'disabled_devices': device_states.get('disabled', 0),
         'retired_devices': device_states.get('retired', 0),
         'model_registry_count': len(model_rows),
+        'reviewed_offline_candidates': candidates,
+        'models_needing_quality_review': weak_models,
         'unverified_models': sum('validated' not in str(x.get('status','')).lower() for x in model_rows),
         'repeat_block_threshold': blocked >= 5,
         'unregistered_access': any('not registered' in str(x.get('reason','')).lower() for x in bounded_events if isinstance(x,dict)),
@@ -74,6 +86,8 @@ def _facts(e):
     if e['repeat_block_threshold']: facts.append('flag(repeated_blocks).')
     if e['disabled_devices'] or e['retired_devices']: facts.append('flag(device_lifecycle).')
     if e['unverified_models']: facts.append('flag(unverified_checkpoints).')
+    if e['reviewed_offline_candidates']:facts.append('flag(offline_candidate).')
+    if e['models_needing_quality_review']:facts.append('flag(model_quality_risk).')
     return '\n'.join(facts) + '\n'
 
 MESSAGES = {
@@ -87,6 +101,8 @@ MESSAGES = {
  'repeated_blocks': ('High volume of rejected requests', 'Review recent repeated blocks, rate limits and device identity; verify whether this is a test or unauthorized activity.'),
  'device_lifecycle': ('Inventory includes disabled or retired devices', 'Confirm disabled and retired device IDs remain denied; keep retired credentials revoked.'),
  'unverified_checkpoints': ('Saved checkpoints need validation', 'Do not load or deploy untrusted model files. Validate feature schema, dataset split and independent test metrics.'),
+ 'offline_candidate': ('Offline candidate ready for next stage', 'A model was marked reviewed but is NOT live. Collect compatible TCP/MQTT evidence and run shadow-mode tests before considering enforcement.'),
+ 'model_quality_risk': ('Stored model quality requires review', 'Inspect weaker saved models independently. Compare each split, fold and false-positive rate before approval.'),
  'live_unverified': ('Live ML integration not verified', 'Do not enable automatic ML blocking until a TCP/MQTT-compatible feature collector and independent validation are connected.'),
 }
 
@@ -102,6 +118,8 @@ def _fallback_rules(e):
     if e['repeat_block_threshold']:flags.append('repeated_blocks')
     if e['disabled_devices'] or e['retired_devices']:flags.append('device_lifecycle')
     if e['unverified_models']:flags.append('unverified_checkpoints')
+    if e['reviewed_offline_candidates']:flags.append('offline_candidate')
+    if e['models_needing_quality_review']:flags.append('model_quality_risk')
     flags.append('live_unverified')
     return flags
 

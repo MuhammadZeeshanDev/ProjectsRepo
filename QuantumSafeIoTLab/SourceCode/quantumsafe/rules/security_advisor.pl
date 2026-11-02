@@ -11,3 +11,6 @@ recommendation(repeated_blocks) :- flag(repeated_blocks).
 recommendation(device_lifecycle) :- flag(device_lifecycle).
 recommendation(unverified_checkpoints) :- flag(unverified_checkpoints).
 recommendation(live_unverified).
+
+recommendation(offline_candidate) :- flag(offline_candidate).
+recommendation(model_quality_risk) :- flag(model_quality_risk).

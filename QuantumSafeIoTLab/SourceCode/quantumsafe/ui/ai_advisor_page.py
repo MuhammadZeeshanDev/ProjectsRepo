@@ -52,6 +52,21 @@ def show_embedded(actor):
         models = [{'name': r[0], 'algorithm': r[1], 'status': r[2], 'created_utc': r[3]} for r in rows]
     except Exception:
         pass
+    # Include locally saved training evidence, including across application restarts.
+    try:
+        from ..model_lifecycle import list_models
+        trusted_models=list_models(limit=40)
+        models.extend([{'name':f"Local checkpoint #{r['id']}", 'algorithm':r['algorithm'],
+                        'status':r['state'], 'split':r['split'], 'metrics':r['metrics']}
+                       for r in trusted_models])
+        if training is None and trusted_models:
+            # Recovered metrics are real saved evidence; no claim of live model activity.
+            from ..model_lifecycle import inspect_model
+            last=inspect_model(trusted_models[0]['id'])
+            training={'heldout':last['metrics'],'folds':last['folds'],
+                      'truncated_to_first_rows':True}
+    except (ValueError, OSError, KeyError, ImportError):
+        pass
     report = analyze(training, events, prolog_executable=executable or '', devices=inventory, models=models)
     a, b, c = st.columns(3)
     a.metric('ML training evidence', 'Loaded' if report['evidence']['has_training'] else 'Not loaded')
@@ -84,7 +99,7 @@ def show_embedded(actor):
             st.markdown(st.session_state['qs_local_ai_last'])
     else:
         st.info('No local Ollama model detected. SWI-Prolog works without it. For conversational AI, install Ollama on PC A and pull a model; no API key is needed.')
-    st.warning('AI suggestions are advisory: no automatic ML deployment or security-policy changes. Live TCP/MQTT feature capture is not yet wired to trained models.')
+    st.warning('AI and Prolog provide local advice based on stored evidence. They never execute model changes automatically or claim live ML coverage.')
 
 
 def show(actor):

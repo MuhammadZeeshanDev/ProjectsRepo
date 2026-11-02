@@ -68,6 +68,21 @@ def run_experiment(raw, label, features, algo, split, folds, seed=42, max_rows=2
     final=pipeline();final.fit(X_train,y_train);pred=final.predict(X_test)
     cm=confusion_matrix(y_test,pred,labels=list(range(len(encoder.classes_))))
     metrics={'accuracy':round(float(accuracy_score(y_test,pred)),6),'macro_f1':round(float(f1_score(y_test,pred,average='macro',zero_division=0)),6)}
-    if len(encoder.classes_)==2:
-        tn,fp,fn,tp=cm.ravel();metrics['false_positive_rate']=round(float(fp/(fp+tn)),6) if fp+tn else None
+    # Class index 0 is not necessarily NORMAL. E.g. alphabetic labels
+    # ['attack','normal'] put attack at index 0, so cm.ravel() FPR is WRONG.
+    # Report detection FPR only where the normal label can be identified.
+    if len(encoder.classes_) == 2:
+        normalized = [str(c).strip().casefold() for c in encoder.classes_]
+        known_normal = {'normal','benign','0','non-attack','non_attack','legitimate'}
+        normals = [i for i, name in enumerate(normalized) if name in known_normal]
+        if len(normals) == 1:
+            ni = normals[0]
+            ai = 1 - ni
+            denominator = int(cm[ni].sum())
+            metrics['false_positive_rate'] = round(float(cm[ni, ai] / denominator), 6) if denominator else None
+            metrics['normal_label'] = str(encoder.classes_[ni])
+            metrics['attack_label'] = str(encoder.classes_[ai])
+        else:
+            metrics['false_positive_rate'] = None
+            metrics['false_positive_rate_note'] = 'Unknown normal class; cannot safely compute attack-detection FPR.'
     return {'algorithm':algo,'split':f'{int((1-split)*100)}/{int(split*100)}','folds':records,'heldout':metrics,'confusion_matrix':cm.tolist(),'classes':encoder.classes_.tolist(),'training_rows':len(y_train),'test_rows':len(y_test),'sample_rows':len(df),'truncated_to_first_rows':truncated,'features':features,'seed':seed,'pipeline':final,'label_encoder':encoder,'data_sha256':hashlib.sha256(raw).hexdigest()}
