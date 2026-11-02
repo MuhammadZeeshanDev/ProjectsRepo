@@ -19,7 +19,7 @@ options=['🏠 Overview']
 if may_run(actor['RoleName']):
     options+=['🛡️ Device Security & Tests']
 if actor['RoleName']=='Admin':
-    options+=['🧬 ML Research Studio','✨ AI Research Advisor','🤖 Model Training','🔒 Secure Connection Lab','🌐 LAN Lab']
+    options+=['🤖 ML Lab & AI','🔒 Secure Connection Lab']
 if may_manage_users(actor['RoleName']):options+=['👥 Team Accounts']
 page=st.sidebar.radio('Lab screens',options,key='nav_page')
 if st.sidebar.button('🚪 Log out'):
@@ -27,9 +27,6 @@ if st.sidebar.button('🚪 Log out'):
 st.sidebar.caption('Virtual demonstrations only · not a browser firewall')
 if page=='🏠 Overview':dashboard.show(actor)
 elif page=='🛡️ Device Security & Tests':virtual_lab.show(actor)
-elif page=='🧬 ML Research Studio':research_studio.show(actor)
-elif page=='✨ AI Research Advisor':ai_advisor_page.show(actor)
-elif page=='🤖 Model Training':ml_lab.show(actor)
+elif page=='🤖 ML Lab & AI':ml_lab.show(actor)
 elif page=='🔒 Secure Connection Lab':demo.show(actor)
-elif page=='🌐 LAN Lab':lan_page.show(actor)
 elif page=='👥 Team Accounts':admin_page.show(actor)

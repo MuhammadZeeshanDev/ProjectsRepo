@@ -7,8 +7,8 @@ import streamlit as st
 BASE = Path(__file__).resolve().parents[3]
 STORE = BASE / 'ML_Artifacts'
 DB = STORE / 'registry.sqlite3'
-MAX_UPLOAD = 1024 * 1024 * 1024
-MAX_EXTRACT = 1024 * 1024 * 1024
+MAX_UPLOAD = 60 * 1024 * 1024
+MAX_EXTRACT = 120 * 1024 * 1024
 
 def connection():
     STORE.mkdir(parents=True, exist_ok=True)
@@ -21,7 +21,7 @@ def safe_name(s):
     return re.sub(r'[^a-zA-Z0-9_.-]', '_', str(s))[:100]
 
 def import_artifact(name, dataset, algorithm, file_name, data, features, notes):
-    if not data or len(data) > 60 * 1024 * 1024: raise ValueError('Model checkpoint exceeds 60 MB; this restriction is for model imports only.')
+    if not data or len(data) > MAX_UPLOAD: raise ValueError('Model file empty or over 60 MB. Use a smaller checkpoint or offline import later.')
     ext = Path(file_name).suffix.lower()
     if ext not in ('.joblib','.pkl','.json','.ubj','.txt','.onnx','.zip'): raise ValueError('Unsupported model file type.')
     if ext == '.zip':
@@ -41,7 +41,7 @@ def import_artifact(name, dataset, algorithm, file_name, data, features, notes):
 
 def profile_csv(raw, label):
     import pandas as pd
-    if not raw: raise ValueError('Dataset is empty.')
+    if len(raw)>MAX_UPLOAD: raise ValueError('Dataset over 60 MB. Use a smaller sample for profiling.')
     frame=pd.read_csv(io.BytesIO(raw),nrows=10000,low_memory=False)
     if frame.empty: raise ValueError('No records found')
     st.caption('Preview limited to first 10,000 records; statistics describe this sample, not necessarily the full dataset.')
@@ -55,147 +55,90 @@ def profile_csv(raw, label):
     st.download_button('Download sample quality report CSV',stats.to_csv(index=False).encode(),'quality_report.csv','text/csv')
 
 def show(actor):
-    st.title('🤖 ML Lab — Dataset Manager & Model Registry')
-    st.info('Research notebook is not automatically a trained model. Import exported checkpoints separately. Imported .pkl/.joblib files are stored but NEVER executed here.')
-    t1,t2,t3,t4=st.tabs(['📂 Dataset profile','📥 Import model','📋 Model registry','🎯 Edge-IIoTset RF Prediction'])
-    with t1:
-        st.caption('Dataset profile: previews first 10,000 rows. For large datasets use the Prediction tab for full processing.')
-        upload=st.file_uploader('Choose CSV for sample profiling (up to 1 GB with large-file launcher)',type=['csv'],key='ml_dataset')
-        if upload is not None:
-            try:
-                import pandas as pd
-                upload.seek(0)
-                cols=pd.read_csv(upload,nrows=0).columns.tolist()
-                label=st.selectbox('Class label (optional)',['(none)']+cols)
-                if st.button('Analyze dataset'):
-                    upload.seek(0)
-                    frame=pd.read_csv(upload,nrows=10000,low_memory=False)
-                    if frame.empty: raise ValueError('CSV is empty')
-                    st.caption('Statistics below describe only the first 10,000 rows.')
-                    a,b,c=st.columns(3)
-                    a.metric('Sample rows',len(frame));b.metric('Columns',len(frame.columns));c.metric('Duplicate sample rows',int(frame.duplicated().sum()))
-                    st.dataframe(frame.head(20),use_container_width=True)
-                    stats=pd.DataFrame({'column':frame.columns,'type':[str(t) for t in frame.dtypes],'missing':[int(frame[x].isna().sum()) for x in frame.columns]})
-                    st.dataframe(stats,use_container_width=True)
-                    if label != '(none)': st.bar_chart(frame[label].astype(str).value_counts().head(30))
-                    st.download_button('Download sample quality report',stats.to_csv(index=False).encode(),'quality_report.csv','text/csv')
-            except Exception as e: st.error(f'Cannot profile CSV: {e}')
-    with t2:
-        with st.form('import_model'):
-            name=st.text_input('Model name',placeholder='Edge-IIoTset RF SA-HFS K12')
-            dataset=st.selectbox('Training dataset',['Edge-IIoTset','CICIoT2023','TON_IoT','Other'])
-            algo=st.selectbox('Algorithm',['Random Forest','XGBoost','LightGBM','Other'])
-            model=st.file_uploader('Exported checkpoint (.joblib, .pkl, .json, .ubj, .onnx, .zip)',type=['joblib','pkl','json','ubj','txt','onnx','zip'])
-            features=st.text_area('Selected features (one per line; optional)')
-            notes=st.text_area('Preprocessing and label mapping notes (optional)')
-            submitted=st.form_submit_button('Save model to registry')
-        if submitted:
-            if not name.strip() or model is None: st.error('Enter a model name and choose a checkpoint file.')
+    if actor.get('RoleName')!='Admin':
+        st.error('Administrator only.');return
+    st.title('🤖 ML Lab — Training, Models & AI')
+    st.caption('One place for training, independent split/fold evaluation, model files, deployment checks and AI guidance.')
+    tabs=st.tabs(['🎯 Train & compare','📊 Existing experiments','📦 Model library','✨ AI assistant','🔌 Live deployment readiness','🌐 LAN explanation'])
+    with tabs[0]:
+        from ..local_training import algorithms,run_experiment
+        st.info('Local supervised training with a held-out test set. Preprocessing is fitted on each training fold only. A test-set score is NOT proof of live IoT detection.')
+        dataset=st.file_uploader('Training dataset CSV (up to 60 MB, first 20,000 rows)',type=['csv'],key='train_csv')
+        if dataset:
+            raw=dataset.getvalue()
+            if len(raw)>MAX_UPLOAD:st.error('File too large')
             else:
                 try:
-                    sha=import_artifact(name.strip(),dataset,algo,model.name,model.getvalue(),[x.strip() for x in features.splitlines() if x.strip()],notes)
-                    st.success('Model file stored. SHA256: '+sha[:20]+'… Status: NOT VALIDATED; predictions are disabled.')
-                except Exception as e: st.error(str(e))
-    with t3:
-        with connection() as db:
-            rows=db.execute('SELECT id,name,dataset,algorithm,status,size_bytes,created_utc,sha256,features_json FROM models ORDER BY id DESC').fetchall()
-        if rows:
-            import pandas as pd
-            df=pd.DataFrame(rows,columns=['ID','Name','Dataset','Algorithm','Status','Bytes','Imported (UTC)','SHA256','Features JSON'])
-            st.dataframe(df,use_container_width=True)
-        else: st.info('No imported models yet.')
-        st.caption('This release does not run training, model inference, cross-dataset evaluation or live blocking. Those require verified feature/preprocessing compatibility and trusted model loading.')
-
-    with t4:
-        st.subheader('SA-HFS v3 Random Forest — 70/30')
-        from quantumsafe import ml_run_store
-        try:
-            history_ready = ml_run_store.is_initialized()
-            if not history_ready:
-                st.info('SQL run history is not initialized yet. You can still run predictions without it.')
-                if st.button('🗄️ Initialize ML history table (one time)',key='init_ml_history'):
-                    ml_run_store.initialize()
-                    st.success('ML run history enabled.')
-                    st.rerun()
-        except Exception as exc:
-            history_ready = False
-            st.warning(f'SQL ML history unavailable: {type(exc).__name__}')
-
-        st.caption('Uses your existing saved model. No retraining or automatic gateway blocking.')
-        st.warning('Metrics from arbitrary CSV rows are exploratory, not independent research validation.')
-        import sklearn
-        st.caption(f'Installed scikit-learn: {sklearn.__version__}')
-        st.info('Upload a large Edge-IIoTset CSV (up to 1 GB when launched with the large-file command), or enter its local Windows path. Predictions process 10,000 rows at a time.')
-        local_path = st.text_input('Local CSV full path (Windows)', placeholder=r'D:\Datasets\Edge_IIoTset_Cleaned.csv', key='edge_rf_local_path')
-        uploaded = st.file_uploader('Or upload Edge-IIoTset CSV (up to 1 GB with large-file launcher)', type=['csv'], key='edge_rf_csv')
-        if st.button('▶ Run saved Random Forest', key='edge_rf_run'):
-            try:
-                from quantumsafe.edge_rf_inference import predict_local_csv, predict_csv
-                if local_path.strip():
-                    with st.spinner('Processing local CSV in batches. This can take a while...'):
-                        result = predict_local_csv(local_path.strip().strip('"'))
-                    st.session_state['edge_rf_result'] = result
-                    st.session_state['edge_rf_unsaved'] = True
-                elif uploaded is not None:
-                    import tempfile
-                    from pathlib import Path
-                    with st.spinner('Saving upload temporarily and predicting in 10,000-row batches...'):
-                        with tempfile.NamedTemporaryFile(prefix='quantumsafe_uploaded_', suffix='.csv', delete=False) as tmp:
-                            temp_path = Path(tmp.name)
-                            try:
-                                uploaded.seek(0)
-                                while True:
-                                    block = uploaded.read(4 * 1024 * 1024)
-                                    if not block: break
-                                    tmp.write(block)
-                            except Exception:
-                                temp_path.unlink(missing_ok=True)
-                                raise
-                        try:
-                            result = predict_local_csv(str(temp_path))
-                        finally:
-                            temp_path.unlink(missing_ok=True)
-                    st.session_state['edge_rf_result'] = result
-                    st.session_state['edge_rf_unsaved'] = True
-                else:
-                    st.error('Enter a local CSV path or upload a CSV.')
-            except AttributeError as e:
-                if '_RemainderColsList' in str(e):
-                    st.error('Model was saved using a different scikit-learn version. Install the matching training version in the app virtual environment, then restart the app. See update README for commands.')
-                else:
-                    st.error(f'Prediction failed: {e}')
-            except Exception as e:
-                st.error(f'Prediction failed: {e}')
-        if st.session_state.get('edge_rf_unsaved') and st.session_state.get('edge_rf_result') and history_ready:
-            try:
-                ml_run_store.insert_run(st.session_state['edge_rf_result'])
-                st.session_state['edge_rf_unsaved'] = False
-                st.success('ML run summary saved in SQL Server (no CSV data stored).')
-            except Exception as exc:
-                st.warning(f'Prediction succeeded but SQL history save failed: {type(exc).__name__}: {exc}')
-        with st.expander('📚 Previous ML runs in SQL Server'):
-            if history_ready:
-                try:
-                    st.dataframe(ml_run_store.recent_runs(50),hide_index=True,use_container_width=True)
-                except Exception as exc: st.warning(f'History unavailable: {type(exc).__name__}')
-            else: st.info('Initialize the SQL history table to see saved runs.')
-        result = st.session_state.get('edge_rf_result')
+                    import pandas as pd
+                    columns=pd.read_csv(io.BytesIO(raw),nrows=0).columns.tolist()
+                    label=st.selectbox('Target label / attack class',columns,key='train_label')
+                    selected=st.multiselect('Input features (never include target)',[x for x in columns if x!=label],default=[x for x in columns if x!=label][:min(10,len(columns)-1)],max_selections=30)
+                    a,b,c=st.columns(3)
+                    algo=a.selectbox('Algorithm',algorithms(),key='train_algo')
+                    split=b.selectbox('Holdout split',['70/30','80/20'],key='train_split')
+                    folds=c.selectbox('Stratified CV folds',[3,5],key='train_folds')
+                    st.caption('Algorithms only appear when installed. Original, ROS and SA-HFS protocols must be supplied as explicitly prepared datasets; this form never claims to reproduce those protocols automatically.')
+                    if st.button('▶️ Train and evaluate now',type='primary'):
+                        with st.spinner('Training on bounded local sample...'):
+                            result=run_experiment(raw,label,selected,algo,0.3 if split=='70/30' else 0.2,folds)
+                        st.session_state['qs_training_result']=result
+                        st.session_state['qs_training_details']=(dataset.name,label,split,folds)
+                except Exception as e:st.error('Training setup failed: '+str(e))
+        result=st.session_state.get('qs_training_result')
         if result:
-            st.success(f"Processed {result['rows']:,} records")
-            a,b = st.columns(2)
-            a.metric('Normal (0)',result['counts'].get(0,0))
-            b.metric('Attack (1)',result['counts'].get(1,0))
-            st.dataframe(result['preview'],use_container_width=True)
-            metrics = result.get('metrics')
-            if metrics:
-                st.subheader('Exploratory evaluation')
-                for key in ('Accuracy','Precision (attack=1)','Recall (attack=1)','F1 (attack=1)'):
-                    st.metric(key, f"{metrics[key]:.2%}")
-                st.write('Confusion matrix (rows actual 0/1, columns predicted 0/1)')
-                import pandas as pd
-                st.dataframe(pd.DataFrame(metrics['Confusion matrix'],index=['Actual 0','Actual 1'],columns=['Predicted 0','Predicted 1']))
-            if 'csv_bytes' in result:
-                st.download_button('⬇ Download predictions CSV',result['csv_bytes'],'QuantumSafe_predictions.csv','text/csv')
-            elif 'output_path' in result:
-                st.info('Full predictions CSV saved locally at: '+result['output_path'])
-                st.caption('Large files are saved to disk instead of being loaded into browser memory.')
+            st.subheader('Last completed experiment (session only)')
+            st.write('Algorithm:',result['algorithm'],' • Split:',result['split'],' • Training records:',result['training_rows'],' • Test records:',result['test_rows'])
+            st.dataframe(pd.DataFrame(result['folds']),hide_index=True,use_container_width=True)
+            st.json({'held_out_metrics':result['heldout'],'class_order':result['classes'],'confusion_matrix':result['confusion_matrix'],'dataset_truncated':result['truncated_to_first_rows']})
+            st.warning('The held-out split is evaluated ONCE after CV; no online learning, live gateway connection or automatic deployment is performed.')
+            if st.button('💾 Save trained checkpoint locally'):
+                import joblib
+                bundle={'model':result['pipeline'],'label_encoder':result['label_encoder'],'features':result['features'],'dataset_sha256':result['data_sha256'],'class_order':result['classes']}
+                buff=io.BytesIO();joblib.dump(bundle,buff)
+                if buff.tell()>MAX_UPLOAD:st.error('Checkpoint over allowed size')
+                else:
+                    name,lab,split_name,nfolds=st.session_state.get('qs_training_details',('dataset','label','split',3))
+                    digest=import_artifact(f'{result["algorithm"]} {split_name} {nfolds}fold',name,result['algorithm'],'trained.joblib',buff.getvalue(),result['features'],'Locally trained trusted checkpoint. Not validated for live gateway inference. Target: '+lab)
+                    st.success('Checkpoint stored (NOT deployed). SHA256: '+digest[:20])
+    with tabs[1]:
+        from . import research_studio
+        research_studio.show_evidence()
+    with tabs[2]:
+        _model_library()
+    with tabs[3]:
+        from . import ai_advisor_page
+        ai_advisor_page.show_embedded(actor)
+    with tabs[4]:
+        from .. import deployment_readiness
+        deployment_readiness.show()
+    with tabs[5]:
+        st.subheader('Why is there a LAN Lab?')
+        st.write('The legacy LAN Lab sends authenticated messages between TWO Python programs on a private local network. It tests network connectivity, shared-secret authentication and SQL audit. It is NOT an IDS and does not run your trained ML models.')
+        st.info('Your current PC B attacker console and virtual gateway run over loopback (127.0.0.1). LAN Lab is a separate legacy proof-of-connection, so it is hidden from the main navigation to avoid confusing it with real-time ML protection.')
+        st.warning('To use two physical PCs later, we must securely redesign credentials, transport and firewall settings. Do not expose the legacy LAN listener to the internet.')
+
+def _model_library():
+    st.subheader('Imported and trained model checkpoints')
+    st.caption('Untrusted .pkl/.joblib files are stored but not loaded automatically. Full deployment requires a verified feature adapter and controlled validation.')
+    t1,t2=st.tabs(['📥 Import checkpoint','📋 Saved models'])
+    with t1:
+        with st.form('import_model'):
+            name=st.text_input('Checkpoint name')
+            dataset=st.selectbox('Dataset',['Edge-IIoTset','CICIoT2023','TON_IoT','Other'])
+            algo=st.selectbox('Algorithm',['Random Forest','XGBoost','LightGBM','Other'])
+            model=st.file_uploader('Model file',type=['joblib','pkl','json','ubj','txt','onnx','zip'])
+            features=st.text_area('Input features (one per line)')
+            notes=st.text_area('Training notes')
+            submitted=st.form_submit_button('Save checkpoint (do not execute)')
+        if submitted:
+            if not name.strip() or model is None:st.error('Name and model file required')
+            else:
+                try:
+                    digest=import_artifact(name.strip(),dataset,algo,model.name,model.getvalue(),[x.strip() for x in features.splitlines() if x.strip()],notes)
+                    st.success('Stored (NOT deployed). SHA256 '+digest[:20])
+                except Exception as e:st.error(str(e))
+    with t2:
+        with connection() as db:
+            rows=db.execute('SELECT id,name,dataset,algorithm,status,size_bytes,created_utc,sha256 FROM models ORDER BY id DESC').fetchall()
+        if rows:st.dataframe(pd.DataFrame(rows,columns=['ID','Name','Dataset','Algorithm','Status','Bytes','Imported UTC','SHA256']),use_container_width=True,hide_index=True)
+        else:st.info('No model checkpoints in local library.')

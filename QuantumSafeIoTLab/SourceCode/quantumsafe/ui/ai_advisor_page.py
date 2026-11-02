@@ -3,9 +3,9 @@ import os
 import streamlit as st
 from .. import research_catalog as catalog
 from ..ai_research_advisor import build_context,local_advice,ask_llm
-def show(actor):
+def show_embedded(actor):
     if actor.get('RoleName')!='Admin':st.error('Administrator only.');return
-    st.title('✨ AI Research Advisor')
+    st.subheader('✨ AI inside ML Lab')
     st.caption('AI recommendations are advisory only. They never change gateway policy, trigger alarms, or deploy models.')
     version=st.selectbox('Evidence protocol',list(catalog.FILES),key='ai_proto')
     table=st.selectbox('Evidence table',list(catalog.FILES[version]),key='ai_table')
@@ -33,3 +33,7 @@ def show(actor):
                     answer=ask_llm(ctx,question,key,model_name)
                 st.markdown(answer)
             except Exception as e:st.error(str(e))
+
+
+def show(actor):
+    show_embedded(actor)
