@@ -1,0 +1,14 @@
+QuantumSafe v1.7.0 local validation
+- Syntax compilation of all added Python modules: passed.
+- 12 focused pytest tests: passed.
+- RF, XGBoost, LightGBM real fitting and stratified CV on labeled synthetic IoT CSV: passed.
+- Bounded streaming sampler, non-leak auto feature screening, unlabeled rejection: passed.
+- Binary and multiclass model versioning/immutable SQLite, clean retraining: passed.
+- Saved SHA256 verification rejects tampered model before joblib deserialization: passed.
+- Fixed-rule model ranking, schema-safe chunked offline prediction, shadow event routing: passed (Python rules fallback, SWI-Prolog absent).
+- Incident rule categories based on recorded blocked events: passed (Python rules fallback).
+- End-to-end CLI train-all on 500-row synthetic CSV + automatic shadow ranking + 500-row inference: passed.
+- Native SWI-Prolog on Windows: NOT RUN; swipl executable absent here.
+- Streamlit UI / SQL Server / Windows gateway / real loudspeaker: NOT RUN; these require user's Windows setup.
+- Arbitrarily large 3GiB+ local CSV: NOT RUN; streaming code tested on small examples only.
+- Online real-network device identification / IPS firewall blocking: NOT IMPLEMENTED in v1.7; must not be claimed.

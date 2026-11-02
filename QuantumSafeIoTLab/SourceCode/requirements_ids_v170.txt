@@ -1,0 +1,8 @@
+# Install in the SAME virtualenv that launches QuantumSafe.
+# Python 3.11/3.12 recommended for compatible Windows wheels.
+numpy>=1.26,<3
+pandas>=2.0,<4
+scikit-learn>=1.4,<2
+joblib>=1.3,<2
+xgboost>=2.0,<4
+lightgbm>=4.0,<5
