@@ -52,10 +52,6 @@ def show(actor):
     if l.button('▶ Start virtual gateway',disabled=bool(gw.server),type='primary'):
         try:
             gw.start(8765)
-            from .. import gateway_event_store
-            try:
-                if gateway_event_store.is_initialized():gw.event_sink=gateway_event_store.insert_event
-            except Exception:pass
             st.success('Gateway started at 127.0.0.1:8765')
             st.rerun()
         except Exception as exc:st.error(f'Gateway start failed: {exc}')
@@ -123,4 +119,56 @@ def show(actor):
     st.divider()
     from . import acceptance_station
     acceptance_station.show(actor,gw)
+    _sql_diagnostics(gw)
     st.info('To connect a REAL camera/router later, a separate authenticated provisioning agent, secure key exchange and a routing/collector integration are required. This release simulates devices on localhost.')
+
+
+def _sql_diagnostics(gw):
+    """Admin-only visible SQL health and real event read-back."""
+    from .. import gateway_event_store as sql_store
+    from .. import db
+    with st.expander("🗄️ SQL Server 2022 · Persistence & Diagnostics", expanded=False):
+        sync=getattr(gw,"sql_sync",None)
+        if sync is None:
+            st.error("Gateway update incomplete. Restart app and install v2.0.2.")
+            return
+        pending=sync.pending_counts()
+        a,b,c=st.columns(3)
+        a.metric("Queued SQL events",pending["events"])
+        b.metric("Queued device updates",pending["devices"])
+        c.metric("Last confirmed SQL save",sync.last_ok_utc or "Not verified")
+        if sync.last_error:st.error("SQL write unavailable: "+sync.last_error)
+        if gw.last_persist_error:st.error("Local queue failure: "+gw.last_persist_error)
+        st.caption("Queued = durable local SQLite only, NOT yet saved to SQL Server. Passwords/device keys are NOT mirrored. Models are stored in ML_Artifacts SQLite, not SQL Server.")
+        if st.button("🔌 Check SQL connection, initialize and sync", key="qs_sql_health"):
+            try:
+                with db.connection() as con:
+                    row=con.cursor().execute("SELECT @@SERVERNAME, DB_NAME()").fetchone()
+                sql_store.initialize()
+                sync.stage_inventory(gw.registry.inventory())
+                n=sync.flush_once(40)
+                counts=sql_store.counts()
+                if sync.last_error:
+                    st.warning(f"SQL connected: {row[0]} / {row[1]}, but sync still failing: {sync.last_error}")
+                else:
+                    st.success(f"SQL connected: {row[0]} / {row[1]} · {n} queued records confirmed · {counts['total']} gateway events in SQL")
+            except Exception as exc:
+                st.error(f"SQL verification FAILED: {type(exc).__name__}: {exc}")
+                st.info("Check project .env SQL_SERVER / SQL_DATABASE, Windows account access, ODBC Driver 18, and CREATE TABLE/INSERT permissions.")
+        if gw.server and gw.registered_devices:
+            if st.button("🧪 Write and read back a real ALLOW event", key="qs_sql_readback"):
+                try:
+                    did=next(iter(gw.registered_devices))
+                    result=gw.send("Sensor",device_override=did)
+                    if result["decision"]!="ALLOW":
+                        st.warning("Gateway did not allow the test request: "+result["reason"])
+                    else:
+                        sync.flush_once(40)
+                        if sql_store.event_exists(result["event_id"]):
+                            st.success("PASS: This actual HTTP request was saved AND read back from SQL Server 2022.")
+                        else:
+                            st.warning("Request allowed and queued, but NOT YET verified in SQL. Check queue status and retry.")
+                except Exception as exc:
+                    st.error(f"SQL write/read-back FAILED: {type(exc).__name__}: {exc}")
+        else:
+            st.info("Start the virtual gateway to test actual SQL write/read-back.")

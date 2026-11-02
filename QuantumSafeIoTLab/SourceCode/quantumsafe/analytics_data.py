@@ -67,3 +67,8 @@ def model_summary(registry_rows):
                        'features':len(m.get('features') or []),
                        'dataset_sha':str(m.get('dataset_sha256') or '')[:12]})
     return result
+
+
+def newest_rows(agg, limit=200):
+    """Most recent analytics evidence, immutable and safe on iterators."""
+    return agg['rows'][-max(0,int(limit)):][::-1] if int(limit)>0 else []

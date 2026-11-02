@@ -17,6 +17,7 @@ from .device_registry import DeviceRegistry
 from .permissions import require_role
 from .virtual_ips import VirtualIPS
 from .live_ml import LiveShadowWorker
+from .sql_sync import SqlSync
 
 class VirtualGateway:
     def __init__(self):
@@ -31,7 +32,8 @@ class VirtualGateway:
         self.port = None
         self.registry = DeviceRegistry()
         self._reload_registry()
-        self.event_sink = None  # optional SQL writer; called after in-memory event append
+        self.sql_sync = SqlSync()  # durable local queue -> SQL Server 2022 mirror
+        self.event_sink = self.sql_sync.enqueue_event
         self.last_persist_error = None
         self.alarm_engine = AlarmEngine()
         self._viewers = {}  # Short-lived, unpredictable local dashboard access tokens.
@@ -52,6 +54,12 @@ class VirtualGateway:
                                        virtual_ip=virtual_ip,virtual_mac=virtual_mac,
                                        actor=actor.get('Username','Admin'))
             self._reload_registry()
+            # Registry JSON is authoritative for credentials; SQL gets metadata only.
+            try:
+                item=next(x for x in self.registry.inventory() if x['id']==result)
+                self.sql_sync.stage_device(item)
+            except Exception as exc:
+                self.last_persist_error=f'Local SQL queue error: {type(exc).__name__}: {exc}'
             self.nonces={n for n in self.nonces if n[0]!=result}
             self.calls.pop(result,None)
             return result
@@ -113,6 +121,8 @@ class VirtualGateway:
                     self.wfile.write(encoded)
                 except (ValueError, TypeError, UnicodeError, json.JSONDecodeError):
                     self.send_error(400)
+        self.sql_sync.start()
+        self.sql_sync.stage_inventory(self.registry.inventory())
         self.server = ThreadingHTTPServer(('127.0.0.1', int(port)), Handler)
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

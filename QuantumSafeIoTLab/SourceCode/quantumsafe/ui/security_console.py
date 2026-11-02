@@ -25,12 +25,16 @@ def collect():
     from .. import gateway_event_store
     gw=get_gateway()
     sql=[];sql_status='SQL events unavailable'
+    sync=getattr(gw, 'sql_sync', None)
+    pending=sync.pending_counts() if sync else {'events':0,'devices':0}
     try:
-        if gateway_event_store.is_initialized():
+        if sync and sync.last_error and pending['events']:
+            sql_status='SQL sync delayed; '+str(pending['events'])+' event(s) queued locally'
+        elif gateway_event_store.is_initialized():
             sql=gateway_event_store.recent_events(600)
-            sql_status='SQL events connected'
+            sql_status=f'SQL events connected · {pending["events"]} queued'
     except Exception as exc:
-        sql_status='SQL events unavailable: '+type(exc).__name__
+        sql_status='SQL events unavailable: '+type(exc).__name__+f' · {pending["events"]} queued locally'
     nmodels=nroutes=0
     try:
         from ..ml_engine import registry

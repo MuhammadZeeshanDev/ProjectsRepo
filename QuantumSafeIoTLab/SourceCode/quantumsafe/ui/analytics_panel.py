@@ -157,7 +157,7 @@ def _live_dashboard():
     if agg['rows']:
         display=[{'Time UTC':x['time_utc'].isoformat(timespec='seconds'),
                   'Device ID':x['device'],'Decision':x['decision'],'Reason':x['reason'],
-                  'Source IP':x['source_ip'],'Reading':x['reading']} for x in reversed(agg['rows'])[:200]]
+                  'Source IP':x['source_ip'],'Reading':x['reading']} for x in analytics_data.newest_rows(agg, 200)]
         st.dataframe(pd.DataFrame(display),use_container_width=True,hide_index=True)
     if st.session_state.get('qs_analytics_actor_role')=='Admin' and agg['rows']:
         csvbuf=pd.DataFrame([{**x,'time_utc':x['time_utc'].isoformat()} for x in agg['rows']]).to_csv(index=False).encode('utf-8-sig')
