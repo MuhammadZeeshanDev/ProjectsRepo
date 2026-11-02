@@ -3,6 +3,7 @@ import csv, hashlib, io, json, os, re, shutil, sqlite3, tempfile, zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 import streamlit as st
+import pandas as pd
 
 BASE = Path(__file__).resolve().parents[3]
 STORE = BASE / 'ML_Artifacts'
@@ -58,8 +59,8 @@ def show(actor):
     if actor.get('RoleName')!='Admin':
         st.error('Administrator only.');return
     st.title('🤖 ML Lab — Training, Models & AI')
-    st.caption('One place for training, independent split/fold evaluation, model files, deployment checks and AI guidance.')
-    tabs=st.tabs(['🎯 Train & compare','📊 Existing experiments','📦 Model library','✨ AI assistant','🔌 Live deployment readiness','🌐 LAN explanation'])
+    st.caption('Administrator workspace: train and compare models, inspect individual folds, evaluate using AI guidance and check deployment safety.')
+    tabs=st.tabs(['🎯 Train & compare','📦 Model library','✨ AI & improvement','🔌 Deployment checks'])
     with tabs[0]:
         from ..local_training import algorithms,run_experiment
         st.info('Local supervised training with a held-out test set. Preprocessing is fitted on each training fold only. A test-set score is NOT proof of live IoT detection.')
@@ -89,6 +90,7 @@ def show(actor):
             st.subheader('Last completed experiment (session only)')
             st.write('Algorithm:',result['algorithm'],' • Split:',result['split'],' • Training records:',result['training_rows'],' • Test records:',result['test_rows'])
             st.dataframe(pd.DataFrame(result['folds']),hide_index=True,use_container_width=True)
+            st.caption('Each validation fold stays separate; held-out test metrics are reported independently.')
             st.json({'held_out_metrics':result['heldout'],'class_order':result['classes'],'confusion_matrix':result['confusion_matrix'],'dataset_truncated':result['truncated_to_first_rows']})
             st.warning('The held-out split is evaluated ONCE after CV; no online learning, live gateway connection or automatic deployment is performed.')
             if st.button('💾 Save trained checkpoint locally'):
@@ -101,21 +103,13 @@ def show(actor):
                     digest=import_artifact(f'{result["algorithm"]} {split_name} {nfolds}fold',name,result['algorithm'],'trained.joblib',buff.getvalue(),result['features'],'Locally trained trusted checkpoint. Not validated for live gateway inference. Target: '+lab)
                     st.success('Checkpoint stored (NOT deployed). SHA256: '+digest[:20])
     with tabs[1]:
-        from . import research_studio
-        research_studio.show_evidence()
-    with tabs[2]:
         _model_library()
-    with tabs[3]:
+    with tabs[2]:
         from . import ai_advisor_page
         ai_advisor_page.show_embedded(actor)
-    with tabs[4]:
+    with tabs[3]:
         from .. import deployment_readiness
         deployment_readiness.show()
-    with tabs[5]:
-        st.subheader('Why is there a LAN Lab?')
-        st.write('The legacy LAN Lab sends authenticated messages between TWO Python programs on a private local network. It tests network connectivity, shared-secret authentication and SQL audit. It is NOT an IDS and does not run your trained ML models.')
-        st.info('Your current PC B attacker console and virtual gateway run over loopback (127.0.0.1). LAN Lab is a separate legacy proof-of-connection, so it is hidden from the main navigation to avoid confusing it with real-time ML protection.')
-        st.warning('To use two physical PCs later, we must securely redesign credentials, transport and firewall settings. Do not expose the legacy LAN listener to the internet.')
 
 def _model_library():
     st.subheader('Imported and trained model checkpoints')

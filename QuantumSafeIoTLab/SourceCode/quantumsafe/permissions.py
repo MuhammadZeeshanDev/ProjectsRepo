@@ -1,6 +1,6 @@
 """Role rules live here so the UI and services can use the same rules."""
 
-ROLES = ("Admin", "Researcher", "Viewer")
+ROLES = ("Admin", "Researcher")
 
 
 class PermissionDenied(Exception):

@@ -19,7 +19,7 @@ def ask_llm(ctx,question,api_key,model='gpt-4.1-mini'):
     if not question.strip():raise ValueError('Enter a question.')
     import re
     if not re.fullmatch(r'[A-Za-z0-9_.-]{2,90}',model):raise ValueError('Invalid model identifier')
-    payload={'model':model,'messages':[{'role':'system','content':'You are a defensive ML research advisor. Answer only from supplied evidence; do not invent experiment metrics or imply that models are deployed. Clearly identify uncertainty. Never request passwords, security keys or execute code.'},{'role':'user','content':'Research evidence (limited sample): '+json.dumps(ctx,ensure_ascii=False)[:13000]+'\nQuestion: '+question[:2000]}],'temperature':0.2,'max_tokens':650}
+    payload={'model':model,'messages':[{'role':'system','content':'You are a defensive ML research advisor. Answer only from supplied evidence; do not invent experiment metrics or imply that models are deployed. Clearly identify uncertainty. Never request passwords, security keys or execute code.'},{'role':'user','content':'Verified local model-training metrics (no raw examples): '+json.dumps(ctx,ensure_ascii=False)[:13000]+'\nQuestion: '+question[:2000]}],'temperature':0.2,'max_tokens':650}
     req=urllib.request.Request('https://api.openai.com/v1/chat/completions',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer '+api_key,'Content-Type':'application/json'},method='POST')
     try:
         with urllib.request.urlopen(req,timeout=25) as response:data=json.load(response)
