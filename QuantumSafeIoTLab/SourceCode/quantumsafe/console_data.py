@@ -87,7 +87,7 @@ def merge_events(local_events, sql_events=None):
 
 def severity(event):
     reason=str(event.get('reason') or '').lower()
-    if 'integrity' in reason or 'tamper' in reason: return 'critical'
+    if 'integrity' in reason or 'tamper' in reason or 'quarantine' in reason: return 'critical'
     if 'replay' in reason or 'gateway token' in reason or 'per-device credential' in reason:return 'high'
     if 'rate limit' in reason or 'not registered' in reason:return 'medium'
     return 'medium'
@@ -119,6 +119,10 @@ def snapshot(gateway, sql_events=None, acked=None, now=None, model_count=0, rout
         dev=str(ev.get('device') or '')
         if ev['decision']=='ALLOW' and dev not in latest_allow:latest_allow[dev]=ev
         if ev['decision']=='BLOCK' and dev not in latest_block:latest_block[dev]=ev
+    active_quarantines=set()
+    try:
+        active_quarantines={x['device'] for x in gateway.ips.entries() if x['active']}
+    except AttributeError:pass  # backward-compatible fake gateways in legacy tests
     devices=[]
     for item in gateway.registry.inventory():
         if item['status']=='retired':continue
@@ -127,7 +131,7 @@ def snapshot(gateway, sql_events=None, acked=None, now=None, model_count=0, rout
         block_time=parsed_time(rejected.get('timestamp_utc')) if rejected else None
         active=bool(gateway_running and item['status']=='active' and allow_time and 0<=(now-allow_time).total_seconds()<=30)
         targeted=bool(gateway_running and item['status']=='active' and block_time and 0<=(now-block_time).total_seconds()<=30)
-        status='quarantined' if item['status']=='disabled' else ('attack' if targeted else ('online' if active else 'offline'))
+        status='quarantined' if item['status']=='disabled' or did in active_quarantines else ('attack' if targeted else ('online' if active else 'offline'))
         value=allowed.get('reading') if active and allowed else None
         if isinstance(value,bool) or not isinstance(value,(int,float)) or not math.isfinite(value):value=None
         # Configured IP is just a metadata label, not an assigned subnet host.
@@ -144,7 +148,7 @@ def snapshot(gateway, sql_events=None, acked=None, now=None, model_count=0, rout
         alerts.append({'id':ev['console_uid'],'ts':dt.isoformat() if dt else str(ev.get('timestamp_utc','')),
                        'severity':severity(ev),'title':str(ev.get('reason') or 'Rejected request')[:200],
                        'engine':'Virtual HTTP gateway · rules','source_ip':str(ev.get('source_ip') or 'Unknown')[:70],
-                       'device_id':str(ev.get('device') or ''),'action':'Request rejected by local gateway',
+                       'device_id':str(ev.get('device') or ''),'action':str(ev.get('ips_action') or 'Request rejected by local gateway'),
                        'acknowledged':ev['console_uid'] in acked})
         if len(alerts)>=40:break
     rejected_count=sum(e['decision']=='BLOCK' for e in recent_24h)

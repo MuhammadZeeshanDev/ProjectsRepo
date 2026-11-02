@@ -32,6 +32,7 @@ def live_state(gw,runner):
             'Last seen UTC':e.get('timestamp_utc') if e else 'Never',
             'Observed IP':e.get('source_ip') if e else 'Not observed',
             'Last virtual reading':e.get('reading') if e else None,
+            'IPS policy':('QUARANTINED' if gw.ips.active(row['id']) else 'clear'),
             'Generator':('RUNNING' if row['id'] in runner.running() else 'Stopped')})
     st.dataframe(pd.DataFrame(devices),hide_index=True,use_container_width=True)
     st.caption('Observed IP comes from actual localhost HTTP request. 127.0.0.1 is NOT a physical device IP; virtual readings are synthetic.')
@@ -117,4 +118,6 @@ def show(actor):
                         if change in ('disable','retire'):runner.stop(target)
                         st.success('Applied: '+change);st.rerun()
                     except Exception as exc:st.error(str(exc))
+    from .ips_control import show_ips_controls
+    show_ips_controls(actor,gw)
     st.info('To connect a REAL camera/router later, a separate authenticated provisioning agent, secure key exchange and a routing/collector integration are required. This release simulates devices on localhost.')

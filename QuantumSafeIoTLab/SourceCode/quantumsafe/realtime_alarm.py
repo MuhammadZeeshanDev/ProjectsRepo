@@ -11,6 +11,7 @@ SECURITY_REASONS = frozenset({
     'Message integrity check failed',
     'Replay nonce detected',
     'Rate limit: 8 requests per 10 seconds',
+    'Virtual IPS quarantine active',
 })
 
 

@@ -14,6 +14,8 @@ from urllib.error import HTTPError
 from .realtime_alarm import AlarmEngine
 from .device_registry import DeviceRegistry
 from .permissions import require_role
+from .virtual_ips import VirtualIPS
+from .live_ml import LiveShadowWorker
 
 class VirtualGateway:
     def __init__(self):
@@ -31,6 +33,8 @@ class VirtualGateway:
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
         self.alarm_engine = AlarmEngine()
+        self.ips = VirtualIPS()
+        self.live_shadow = LiveShadowWorker()
 
     def _reload_registry(self):
         credentials=self.registry.credentials()
@@ -103,14 +107,23 @@ class VirtualGateway:
         value = data.get('value')
         signature = str(data.get('signature',''))
         authenticated = hmac.compare_digest(str(data.get('token','')), self.token)
+        # Only a valid enrolled device token counts as an authenticated device
+        # identity for optional IPS auto-containment. Attacker-supplied names
+        # and invalid tokens must never disable a legitimate device.
+        quarantined = self.ips.active(device)
         now = time.monotonic()
         with self.lock:
+            enrolled = device in self.registered_devices
+            trusted_identity = (enrolled and authenticated and
+                hmac.compare_digest(str(data.get('device_token', '')), self.device_tokens[device]))
             if device not in self.registered_devices:
                 decision, reason = 'BLOCK', 'Device is not registered'
             elif not authenticated:
                 decision, reason = 'BLOCK', 'Invalid gateway token'
             elif not hmac.compare_digest(str(data.get('device_token', '')), self.device_tokens[device]):
                 decision, reason = 'BLOCK', 'Invalid per-device credential'
+            elif quarantined:
+                decision, reason = 'BLOCK', 'Virtual IPS quarantine active'
             elif not device or not nonce or not isinstance(value,(int,float,str)) or isinstance(value,bool):
                 decision, reason = 'BLOCK', 'Invalid telemetry'
             elif not hmac.compare_digest(signature, self.sign(device,nonce,value)):
@@ -134,12 +147,20 @@ class VirtualGateway:
                 'Message integrity check failed': ('Message tampering', 'Telemetry integrity', 'Reject modified data; inspect sender'),
                 'Replay nonce detected': ('Replay attempt', 'Session freshness', 'Require unique nonces'),
                 'Rate limit: 8 requests per 10 seconds': ('Excessive requests', 'Gateway availability', 'Apply temporary throttling'),
+                'Virtual IPS quarantine active': ('Virtual IPS containment', 'Device telemetry', 'Investigate and release from Administrator console'),
             }.get(reason, ('No confirmed attack', 'Device telemetry', 'Continue monitoring'))
             event = {'event_id':uuid.uuid4().hex, 'attack_type': attack_type, 'affected_component': affected, 'precaution': precaution, 'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
                      'request_type':'telemetry', 'source_ip':source_ip, 'identity_verified': decision == 'ALLOW',
                      'reading':value if decision=='ALLOW' and isinstance(value,(int,float)) and not isinstance(value,bool) else None}
             self.events.appendleft(event)
+        # After a normal decision, apply the optional risk-response policy.
+        # A recorded BLOCK from an invalid gateway/device token NEVER causes
+        # victim-device quarantine; that would enable a denial of service.
+        if self.ips.observe(event, trusted_identity=trusted_identity, enrolled=enrolled):
+            event['ips_action'] = 'Temporary virtual quarantine activated (120s)'
+        if event['decision']=='ALLOW' and event['reading'] is not None:
+            self.live_shadow.submit(event)
         # Alarm is queued on the FIRST qualifying request, not on a UI refresh.
         self.alarm_engine.notify(event)
         # Never hold the gateway lock while performing database I/O.
