@@ -3,7 +3,7 @@ import streamlit as st
 from quantumsafe.version import APP_VERSION
 from quantumsafe import users
 from quantumsafe.permissions import may_run, may_manage_users
-from quantumsafe.ui import login, dashboard, virtual_lab, ml_lab, demo, lan_page, admin_page
+from quantumsafe.ui import login, dashboard, virtual_lab, ml_lab, demo, lan_page, admin_page, research_studio
 st.set_page_config(page_title=f'QuantumSafe IoT Lab v{APP_VERSION}', page_icon='🔐',layout='wide')
 actor_id=st.session_state.get('actor_id')
 if not actor_id:
@@ -19,7 +19,7 @@ options=['🏠 Overview']
 if may_run(actor['RoleName']):
     options+=['🛡️ Device Security & Tests']
 if actor['RoleName']=='Admin':
-    options+=['🤖 Model Training','🔒 Secure Connection Lab','🌐 LAN Lab']
+    options+=['🧬 ML Research Studio','🤖 Model Training','🔒 Secure Connection Lab','🌐 LAN Lab']
 if may_manage_users(actor['RoleName']):options+=['👥 Team Accounts']
 page=st.sidebar.radio('Lab screens',options,key='nav_page')
 if st.sidebar.button('🚪 Log out'):
@@ -27,6 +27,7 @@ if st.sidebar.button('🚪 Log out'):
 st.sidebar.caption('Virtual demonstrations only · not a browser firewall')
 if page=='🏠 Overview':dashboard.show(actor)
 elif page=='🛡️ Device Security & Tests':virtual_lab.show(actor)
+elif page=='🧬 ML Research Studio':research_studio.show(actor)
 elif page=='🤖 Model Training':ml_lab.show(actor)
 elif page=='🔒 Secure Connection Lab':demo.show(actor)
 elif page=='🌐 LAN Lab':lan_page.show(actor)
