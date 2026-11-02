@@ -8,6 +8,7 @@ from .. import gateway_event_store as sql_store
 from ..message_policy import assess_content
 from ..security_alerts import event_identity, alarm_eligible, next_alarm_event
 from ..device_connections import connection_rows, unknown_attempts
+from ..pakistan_time import display as pkt_display
 import base64, io, math, struct, wave
 import streamlit.components.v1 as components
 
@@ -24,7 +25,9 @@ def snapshot_events(gateway):
 def _event_frame(gateway):
     with gateway.lock:
         snapshot = list(gateway.events)
-    return pd.DataFrame(snapshot, columns=['timestamp_utc', 'device', 'decision', 'reason', 'source', 'request_type'])
+    df = pd.DataFrame(snapshot, columns=['timestamp_utc', 'device', 'decision', 'reason', 'source', 'request_type'])
+    df.insert(1, 'Date / Time (Islamabad PKT)', df['timestamp_utc'].map(pkt_display))
+    return df
 
 
 @st.fragment(run_every='3s')
@@ -44,9 +47,13 @@ def live_monitor(gateway):
     st.caption('Counts cover the last 200 events in memory, not the whole network or all-time totals.')
     chart = df['decision'].value_counts().reindex(['ALLOW', 'BLOCK'], fill_value=0)
     st.bar_chart(chart)
+    st.caption('Displayed times use Islamabad, Pakistan (PKT, UTC+05:00); original UTC columns remain available.')
     st.subheader('🔌 Device connection observations')
     st.caption('ACTIVE means a valid gateway request was observed within 30 seconds, not a persistent socket or physical IoT connection.')
-    st.dataframe(pd.DataFrame(connection_rows(snapshot_events(gateway), gateway.registered_devices)), hide_index=True, use_container_width=True)
+    connection_df = pd.DataFrame(connection_rows(snapshot_events(gateway), gateway.registered_devices))
+    if not connection_df.empty:
+        connection_df.insert(3, 'Last trusted activity (PKT)', connection_df['Last trusted activity (UTC)'].map(lambda x: pkt_display(x) if x != 'Never' else 'Never'))
+    st.dataframe(connection_df, hide_index=True, use_container_width=True)
     unknown = unknown_attempts(snapshot_events(gateway), gateway.registered_devices)
     if unknown:
         st.warning(f'{len(unknown)} request(s) claimed an unregistered device identity in the recent event window. This is not proof of a malicious IP.')
@@ -59,6 +66,7 @@ def live_monitor(gateway):
         st.dataframe(latest, hide_index=True, use_container_width=True)
     st.caption('Last seen means a request was observed; it does NOT mean the device is currently connected.')
     st.subheader('🚨 Security incidents')
+    st.caption('Windows host alarm is queued immediately by the gateway, including the first qualifying attack. Browser audio is optional fallback.')
     st.caption('Sound is reserved for NEW blocked security incidents. Normal activity and unverified URL reviews never trigger an alarm.')
     all_events = snapshot_events(gateway)
     # A session begins with its current events as a baseline: old incidents must not replay.
@@ -70,12 +78,14 @@ def live_monitor(gateway):
     if fresh is not None:
         st.error('🚨 NEW BLOCKED INCIDENT: ' + str(fresh.get('attack_type') or fresh.get('reason') or 'Security violation'))
     # The alarm control is always available, even when no incidents have happened.
-    components.html(_alarm_html(event_identity(fresh) if fresh else None,
+    components.html(_alarm_html(None if gateway.alarm_engine else (event_identity(fresh) if fresh else None),
                                 fresh.get('device', '') if fresh else ''), height=90)
     blocked_details = [e for e in all_events if alarm_eligible(e)]
     if blocked_details:
         columns = ['timestamp_utc', 'device', 'source_ip', 'attack_type', 'affected_component', 'reason', 'precaution', 'decision']
-        st.dataframe(pd.DataFrame(blocked_details).reindex(columns=columns), hide_index=True, use_container_width=True)
+        detail_df = pd.DataFrame(blocked_details).reindex(columns=columns)
+        detail_df.insert(1, 'Date / Time (Islamabad PKT)', detail_df['timestamp_utc'].map(pkt_display))
+        st.dataframe(detail_df, hide_index=True, use_container_width=True)
     else:
         st.success('No blocked security incidents in the current event window.')
     st.subheader('📋 Device-wise security report')
@@ -197,6 +207,7 @@ def show(actor):
     if c2.button('🔴 Stop local gateway', disabled=not bool(gateway.server)):
         gateway.stop()
         st.warning('Local HTTP gateway stopped.')
+    st.caption('🚨 Gateway-side Windows alarm: automatic for confirmed unauthorized access, impersonation, tampering, replay and rate-limit incidents. Unknown identity alone is review-only.')
     st.metric('Gateway status', f'Running on 127.0.0.1:{gateway.port}' if gateway.server else 'Stopped')
     st.caption('PC B runs in its own local browser interface. No defender keys are shared. Both participants still run on this one computer.')
     if actor['RoleName'] == 'Admin':

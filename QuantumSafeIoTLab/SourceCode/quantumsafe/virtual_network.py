@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
+from .realtime_alarm import AlarmEngine
 
 class VirtualGateway:
     def __init__(self):
@@ -29,6 +30,7 @@ class VirtualGateway:
         self.device_tokens = {device: secrets.token_urlsafe(24) for device in self.registered_devices}
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
+        self.alarm_engine = AlarmEngine()
 
     def start(self, port=8765):
         if self.server:
@@ -119,6 +121,8 @@ class VirtualGateway:
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
                      'request_type':'telemetry', 'source_ip':source_ip, 'identity_verified': decision == 'ALLOW'}
             self.events.appendleft(event)
+        # Alarm is queued on the FIRST qualifying request, not on a UI refresh.
+        self.alarm_engine.notify(event)
         # Never hold the gateway lock while performing database I/O.
         # A failed DB write does not change the gateway's security decision.
         sink = self.event_sink
