@@ -11,11 +11,13 @@ from .. import console_data
 TEMPLATE=Path(__file__).resolve().parent/'assets'/'quantum_console.html'
 
 
-def render_html(payload):
+def render_html(payload, polling=False):
     # Prevent </script> from ending the JSON assignment (defence in depth).
     content=json.dumps(console_data.public_snapshot(payload),ensure_ascii=True,allow_nan=False)
     content=content.replace('<','\\u003c').replace('>','\\u003e').replace('&','\\u0026')
-    return TEMPLATE.read_text(encoding='utf-8').replace('__QS_SNAPSHOT_JSON__',content)
+    return (TEMPLATE.read_text(encoding='utf-8')
+            .replace('__QS_SNAPSHOT_JSON__',content)
+            .replace('__QS_ENABLE_POLL__','true' if polling else 'false'))
 
 
 def collect():

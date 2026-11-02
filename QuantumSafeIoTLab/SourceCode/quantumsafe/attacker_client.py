@@ -45,3 +45,39 @@ def send_untrusted_device(device_id,port=PORT):
         if exc.code!=403:raise
         return json.loads(exc.read())
     except URLError as exc:raise ConnectionError('Start virtual gateway before PC B test') from exc
+
+
+def discover_targets():
+    """Read-only enrolled virtual device list from the shared same-PC registry.
+
+    No gateway token, private device key, or device auth token is returned.
+    This is local lab inventory, not discovery of physical devices / other PCs.
+    """
+    from .device_registry import DeviceRegistry
+    rows=DeviceRegistry().inventory()
+    return [{'id':row['id'],'name':row['name'],'type':row['type'],
+             'virtual_ip':row.get('virtual_ip') or '', 'status':row['status']}
+            for row in rows if row['status']!='retired']
+
+
+def send_dynamic_test(device_id,case='unauthorized',port=PORT):
+    """Credential-free, bounded local HTTP requests to any newly registered ID."""
+    if case not in ('unauthorized','repeated'):raise ValueError('Unsupported PC B test')
+    from secrets import token_hex
+    import re
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,63}',str(device_id)):
+        raise ValueError('Invalid virtual target')
+    if type(port) is not int or not 1<=port<=65535:raise ValueError('Invalid lab port')
+    output=[]
+    for _ in range(5 if case=='repeated' else 1):
+        payload={'device':device_id,'nonce':token_hex(12),'value':42,
+                 'token':'untrusted-client','device_token':'untrusted-device','signature':'0'*64}
+        request=Request(f'http://127.0.0.1:{port}/telemetry',data=json.dumps(payload).encode(),
+                        headers={'Content-Type':'application/json'},method='POST')
+        try:
+            with urlopen(request,timeout=4) as response:output.append(json.loads(response.read()))
+        except HTTPError as exc:
+            if exc.code!=403:raise
+            output.append(json.loads(exc.read()))
+        except URLError as exc:raise ConnectionError('Start gateway on PC A first') from exc
+    return output

@@ -1,5 +1,9 @@
 """Non-blocking gateway security alarm with visible diagnostics (Windows host only)."""
 import queue
+import io
+import math
+import struct
+import wave
 import sys
 import threading
 import time
@@ -11,6 +15,7 @@ SECURITY_REASONS = frozenset({
     'Message integrity check failed',
     'Replay nonce detected',
     'Rate limit: 8 requests per 10 seconds',
+    'Virtual IPS quarantine active',
     'Virtual IPS quarantine active',
 })
 
@@ -88,12 +93,40 @@ class AlarmEngine:
                 self._queue.task_done()
 
 
+def _siren_wav(critical=False):
+    """Generated locally. Fully formed PCM WAV, no audio asset dependency."""
+    rate=22050
+    duration=1.5 if critical else 0.84
+    pcm=bytearray()
+    for i in range(int(duration*rate)):
+        sec=i/rate
+        phase=sec % (0.3 if critical else .28)
+        on=phase < (.23 if critical else .19)
+        freq=1250 if (int(sec/.3)%2) else 910
+        fade=min(1.0, phase/.016, max(0,(.23-phase)/.026)) if critical else min(1.0,phase/.016,max(0,(.19-phase)/.026))
+        v=int(15000*math.sin(2*math.pi*freq*sec)*max(0,fade)) if on else 0
+        pcm.extend(struct.pack('<h',v))
+    buf=io.BytesIO()
+    with wave.open(buf,'wb') as wav:
+        wav.setnchannels(1);wav.setsampwidth(2);wav.setframerate(rate);wav.writeframes(pcm)
+    return buf.getvalue()
+
+
 def _windows_player(event):
     if sys.platform != 'win32':
         raise RuntimeError('Windows sound is only available on the Windows gateway host')
     import winsound
     errors = []
-    # Prefer system-alert audio, which follows the Windows sound configuration.
+    # Prefer our actual WAV siren over the Windows scheme's possibly silent alias.
+    if hasattr(winsound,'SND_MEMORY'):
+        try:
+            winsound.PlaySound(_siren_wav(critical=event.get('reason') in
+                                  ('Message integrity check failed','Virtual IPS quarantine active')),
+                               winsound.SND_MEMORY)
+            return True
+        except (RuntimeError, OSError, AttributeError) as exc:
+            errors.append('PCM siren: '+str(exc))
+    # Legacy fallback for older machines/mock audio drivers.
     try:
         winsound.PlaySound('SystemExclamation', winsound.SND_ALIAS)  # synchronous by default; SND_SYNC does not exist
         # SND_ALIAS may silently map to no sound when Windows scheme is muted.

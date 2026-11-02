@@ -1,0 +1,8 @@
+Release 2.0.0 tests ran in Linux Python 3.13 container; Windows/SQL/Prolog integration still requires host acceptance.
+- Targeted v2.0 integration + v1.8/1.9 regression tests: 42 passed, 5 sklearn LightGBM feature-name warnings.
+- New JS dashboard script: node --check passed.
+- Model infrastructure and loopback gateway tests: included, all targeted passed.
+- Full historical suite was NOT fully passed: some legacy tests expect removed PC B test names/reasons and the broad suite did not finish before timeout. See tests and known differences.
+- No actual Windows audio hardware tested. Generated PCM WAV header/size verified and alarm thread simulated through injectable player.
+- No browser real rendering test in this environment; smoothness based on DOM diff and interval guard code review.
+- User's physical Wi-Fi/IoT network not scanned, intercepted or modified.

@@ -1,5 +1,6 @@
 """Loopback-only HTTP virtual IoT gateway. Not packet capture or network-wide firewall."""
 import uuid
+import re
 import hashlib
 import hmac
 import json
@@ -33,6 +34,7 @@ class VirtualGateway:
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
         self.alarm_engine = AlarmEngine()
+        self._viewers = {}  # Short-lived, unpredictable local dashboard access tokens.
         self.ips = VirtualIPS()
         self.live_shadow = LiveShadowWorker()
 
@@ -61,6 +63,35 @@ class VirtualGateway:
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *args):
                 pass
+            def do_GET(self):
+                # Explicit bearer-gated localhost viewer. No credentials, control
+                # endpoints, model files or raw secret material exposed here.
+                try:
+                    path=self.path.split('?',1)[0]
+                    matched=re.fullmatch(r'/viewer/([a-zA-Z0-9_-]{32,100})(/state)?', path)
+                    if not matched:
+                        self.send_error(404);return
+                    token=matched.group(1)
+                    if not gateway.valid_viewer(token):
+                        self.send_error(403);return
+                    if matched.group(2):
+                        raw=json.dumps(gateway.viewer_state(),ensure_ascii=True,allow_nan=False).encode('utf-8')
+                        kind='application/json; charset=utf-8'
+                    else:
+                        from .ui.security_console import render_html
+                        raw=render_html(gateway.viewer_state(),polling=True).encode('utf-8')
+                        kind='text/html; charset=utf-8'
+                    self.send_response(200)
+                    self.send_header('Content-Type',kind)
+                    self.send_header('Content-Length',str(len(raw)))
+                    self.send_header('Cache-Control','no-store, private')
+                    self.send_header('Referrer-Policy','no-referrer')
+                    self.send_header('X-Content-Type-Options','nosniff')
+                    self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors http://localhost:8501 http://127.0.0.1:8501")
+                    self.end_headers();self.wfile.write(raw)
+                except Exception:
+                    self.send_error(500)
+
             def do_POST(self):
                 if self.path != '/telemetry':
                     self.send_error(404)
@@ -88,6 +119,29 @@ class VirtualGateway:
         self.thread.start()
         return self.port
 
+    def issue_viewer(self, actor, *, lifetime=1200):
+        """Caller must revalidate actor via SQL-backed active_actor first."""
+        if not isinstance(actor,dict) or actor.get('RoleName') not in ('Admin','Researcher') or not actor.get('UserId'):
+            raise PermissionError('Authenticated application user required')
+        token=secrets.token_urlsafe(32)
+        with self.lock:
+            now=time.time()
+            self._viewers={k:v for k,v in self._viewers.items() if v>now}
+            self._viewers[token]=now+int(lifetime)
+        return token
+
+    def valid_viewer(self, token):
+        with self.lock:
+            expiry=self._viewers.get(token,0)
+            return bool(expiry>time.time())
+
+    def revoke_viewer(self, token):
+        with self.lock:self._viewers.pop(token,None)
+
+    def viewer_state(self):
+        from . import console_data
+        return console_data.public_snapshot(console_data.snapshot(self,[],set()))
+
     def stop(self):
         if self.server:
             self.server.shutdown()
@@ -96,6 +150,7 @@ class VirtualGateway:
             self.server = None
             self.thread = None
             self.port = None
+            with self.lock:self._viewers.clear()
 
     def sign(self, device, nonce, value):
         msg = json.dumps([device, nonce, value], separators=(',', ':'), ensure_ascii=True).encode()

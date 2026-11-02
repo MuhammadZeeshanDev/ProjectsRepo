@@ -170,6 +170,12 @@ select{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);
 .toast span{font-size:13px;overflow-wrap:anywhere}
 @keyframes rise{from{transform:translateY(12px);opacity:0}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+/* Subtle cinematic depth, with CSS-only rendering (no fake traffic or animation loops). */
+.card,.kpi,.posture{box-shadow:0 10px 28px rgba(4,17,35,.10),inset 0 1px rgba(255,255,255,.06);transition:transform .16s ease,box-shadow .16s ease}
+.card:hover{box-shadow:0 16px 38px rgba(4,17,35,.18);transform:translateY(-1px)}
+.top{backdrop-filter:blur(12px)}
+@media (prefers-reduced-motion:reduce){.card:hover{transform:none}}
 </style></head><body>
 
 <div class="wrap">
@@ -186,6 +192,7 @@ select{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);
     <div class="top-r">
       <span class="chip" id="mode" data-mode="lost"><i></i><span id="modeText">Initializing</span></span>
       <button class="btn" id="bell" type="button" aria-label="Jump to unacknowledged alerts">Alerts <span class="badge" id="bellN">0</span></button>
+      <button class="btn" id="sound" type="button" title="Click to enable sounds for NEW threat alerts">🔇 Sound off</button>
       <button class="btn" id="theme" type="button">Theme</button>
     </div>
   </header>
@@ -228,7 +235,7 @@ select{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);
         <div><h2 id="hTraffic">Gateway requests and rejected ratio</h2><p class="sub">Past 90 seconds · actual stored gateway event samples (not raw network packets).</p></div>
         <div class="row"><span class="lg"><i class="a"></i>Gateway requests (1s)</span><span class="lg"><i class="w"></i>Rejected request fraction</span><span class="lg"><i class="d"></i>60% fraction guide</span></div>
       </div>
-      <div class="chartbox"><canvas id="chart" role="img" aria-label="Line chart of packets per second and machine learning anomaly score over the last 90 seconds"></canvas></div>
+      <div class="chartbox"><canvas id="chart" role="img" aria-label="Line chart of local HTTP gateway requests per second and rejected request fraction over the last 90 seconds"></canvas></div>
     </section>
 
     <section class="card a-devices" aria-labelledby="hDev">
@@ -248,7 +255,7 @@ select{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);
 </div>
 <div class="toasts" id="toasts"></div>
 
-<script>window.QS_SNAPSHOT = __QS_SNAPSHOT_JSON__;</script>
+<script>window.QS_SNAPSHOT = __QS_SNAPSHOT_JSON__;window.QS_ENABLE_POLL=__QS_ENABLE_POLL__;</script>
 <script>
 (function(){
 'use strict';
@@ -260,6 +267,21 @@ var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){r
 var RANK={low:0,medium:1,high:2,critical:3};
 var STATUS_LABEL={online:'Reporting',attack:'Rejected attempt',quarantined:'Disabled',offline:'No heartbeat'};
 
+/* ---------- local audio (user gesture required by browsers) ---------- */
+var QS_AUDIO=null,QS_AUDIO_ON=false,QS_LAST_ALERTS=new Set();
+function soundTone(){
+  if(!QS_AUDIO||!QS_AUDIO_ON)return;
+  try{if(QS_AUDIO.state==='suspended')QS_AUDIO.resume();
+    var t=QS_AUDIO.currentTime;
+    [880,1175,880].forEach(function(hz,i){var o=QS_AUDIO.createOscillator(),gain=QS_AUDIO.createGain();
+       o.type='sine';o.frequency.value=hz;
+       gain.gain.setValueAtTime(0.0001,t+i*.22);
+       gain.gain.exponentialRampToValueAtTime(.19,t+i*.22+.03);
+       gain.gain.exponentialRampToValueAtTime(.0001,t+i*.22+.17);
+       o.connect(gain);gain.connect(QS_AUDIO.destination);o.start(t+i*.22);o.stop(t+i*.22+.19);
+    });
+  }catch(e){}
+}
 /* ---------- state ---------- */
 var S={devices:new Map(),order:[],alerts:[],pps:[],anomaly:[],hist:new Map(),blocked:0,mode:'lost',filter:'all'};
 
@@ -273,11 +295,27 @@ function devName(id){var d=S.devices.get(id);return d?d.name:'Network'}
 /* ---------- event application (shared by demo simulator and live WebSocket) ---------- */
 function apply(ev){
   if(ev.type==='snapshot'){
-    S.devices.clear();S.order=[];S.hist.clear();S.alerts=[];
-    ev.devices.forEach(function(d){S.devices.set(d.id,Object.assign({value:d.base==null?null:d.base,status:'online',dec:1},d));S.order.push(d.id);S.hist.set(d.id,[])});
-    (ev.alerts||[]).slice().reverse().forEach(function(a){pushAlert(a,true)});
+    // Diff updates: preserve chart history and existing device DOM across polls.
+    // This avoids the full 3-second card teardown, status blinking and flicker.
+    var incoming=ev.devices||[], newIds=incoming.map(function(d){return d.id});
+    var changed=newIds.length!==S.order.length||newIds.some(function(id,i){return S.order[i]!==id});
+    var fresh=new Map();
+    incoming.forEach(function(d){
+      var old=S.devices.get(d.id), previous=S.hist.get(d.id)||[];
+      fresh.set(d.id,Object.assign({},old||{value:null,status:'offline',dec:1},d));
+      if(d.value!=null && (previous.length===0||previous[previous.length-1]!==d.value)){
+        previous.push(d.value);if(previous.length>30)previous.shift();
+      }
+      S.hist.set(d.id,previous);
+    });
+    S.devices=fresh;S.order=newIds;
+    Array.from(S.hist.keys()).forEach(function(id){if(!fresh.has(id))S.hist.delete(id)});
+    var oldAlerts=S.alerts.map(function(a){return a.id+':'+a.ack}).join('|');
+    S.alerts=[];(ev.alerts||[]).slice().reverse().forEach(function(a){pushAlert(a,true)});
     S.blocked=ev.blocked_24h||0;
-    buildDevices();renderAlerts();renderKpis();posture();
+    if(changed)buildDevices();else updateDevices();
+    if(oldAlerts!==S.alerts.map(function(a){return a.id+':'+a.ack}).join('|'))renderAlerts();
+    renderKpis();posture();
   }else if(ev.type==='tick'){
     S.pps.push(ev.pps);S.anomaly.push(ev.anomaly);
     if(S.pps.length>90){S.pps.shift();S.anomaly.shift()}
@@ -299,7 +337,7 @@ function pushAlert(a,silent){
   S.alerts.unshift(al);if(S.alerts.length>40)S.alerts.pop();
   if(silent)return;
   renderAlerts(al.id);renderBell();posture();
-  if(RANK[al.severity]>=2)toast(al);
+  if(RANK[al.severity]>=2){toast(al);if(!QS_LAST_ALERTS.has(al.id)){QS_LAST_ALERTS.add(al.id);soundTone()}}
   
 }
 
@@ -511,6 +549,10 @@ function init(){
   function setTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('qil-theme',t)}catch(e){}refreshColors();drawChart();Topo.draw(performance.now())}
   try{var theme=localStorage.getItem('qil-theme');if(theme==='dark'||theme==='light')document.documentElement.setAttribute('data-theme',theme)}catch(e){}
   $('#theme').addEventListener('click',function(){var cur=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');setTheme(cur==='dark'?'light':'dark')});
+  $('#sound').addEventListener('click',function(){
+    if(!QS_AUDIO_ON){try{QS_AUDIO=QS_AUDIO||new (window.AudioContext||window.webkitAudioContext)();QS_AUDIO.resume();QS_AUDIO_ON=true;this.textContent='🔊 Sound on';soundTone()}catch(e){this.textContent='Audio unavailable'}}
+    else{QS_AUDIO_ON=false;this.textContent='🔇 Sound off'}
+  });
   refreshColors();Topo.init();
   var data=window.QS_SNAPSHOT;
   apply({type:'snapshot',devices:data.devices,alerts:data.alerts,blocked_24h:data.blocked_24h});
@@ -520,6 +562,27 @@ function init(){
   $('#modeText').textContent=data.gateway_running?'Virtual gateway active':'Gateway stopped';
   $('#foot').textContent=data.footer;
   drawChart();renderKpis();posture();Topo.draw(performance.now());
+  if(window.QS_ENABLE_POLL){
+    var endpoint=window.location.pathname.replace(/\/$/,'')+'/state';
+    var pollInFlight=false;
+    setInterval(function(){
+      if(pollInFlight||document.hidden)return;
+      pollInFlight=true;
+      fetch(endpoint,{cache:'no-store',credentials:'omit'}).then(function(r){if(!r.ok)throw Error('viewer expired');return r.json()}).then(function(next){
+        var old=new Set(S.alerts.map(function(x){return x.id}));
+        apply({type:'snapshot',devices:next.devices,alerts:next.alerts,blocked_24h:next.blocked_24h});
+        S.pps=next.traffic.requests.slice();S.anomaly=next.traffic.rejected_fraction.slice();
+        S.alerts.filter(function(a){return !old.has(a.id) && RANK[a.severity]>=2}).forEach(function(a){
+           if(!QS_LAST_ALERTS.has(a.id)){QS_LAST_ALERTS.add(a.id);soundTone();toast(a)}
+        });
+        $('#mode').dataset.mode=next.gateway_running?'live':'lost';
+        $('#modeText').textContent=next.gateway_running?'Virtual gateway active':'Gateway stopped';
+        $('#foot').textContent=next.footer;
+        renderKpis();posture();drawChart();Topo.draw(performance.now());
+      }).catch(function(){ $('#mode').dataset.mode='lost';$('#modeText').textContent='Monitor connection lost / session expired';
+      }).finally(function(){pollInFlight=false});
+    },3000);
+  }
   window.addEventListener('resize',function(){drawChart();Topo.resize()});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();

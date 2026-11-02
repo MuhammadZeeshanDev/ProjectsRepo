@@ -120,4 +120,7 @@ def show(actor):
                     except Exception as exc:st.error(str(exc))
     from .ips_control import show_ips_controls
     show_ips_controls(actor,gw)
+    st.divider()
+    from . import acceptance_station
+    acceptance_station.show(actor,gw)
     st.info('To connect a REAL camera/router later, a separate authenticated provisioning agent, secure key exchange and a routing/collector integration are required. This release simulates devices on localhost.')

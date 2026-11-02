@@ -1,4 +1,4 @@
-"""QuantumSafe v1.8.0 — admin-driven ML + device installation, operator monitor."""
+"""QuantumSafe v2.0.0 — supervised virtual IDS/IPS & live monitoring."""
 import streamlit as st
 from quantumsafe import users
 from quantumsafe.version import APP_VERSION
@@ -17,11 +17,16 @@ if role not in ('Admin','Researcher'):
     st.session_state.clear();st.error('Unsupported role');st.stop()
 st.sidebar.title('🔐 QuantumSafe IoT Security')
 st.sidebar.caption(f"{actor.get('Username')} · {'Administrator' if role=='Admin' else 'Security Operator'}")
-options=['📊 Live Security Monitoring']
+options=['📊 Live Security Monitoring','📈 Security Analytics & Charts']
 if role=='Admin':
     options+=['🌐 Devices & Installation','🧠 ML & AI Control','🧪 PC B Security Tests','👥 Team Accounts']
 page=st.sidebar.radio('Main panels',options,key='qs_main_nav_v180')
 if st.sidebar.button('🚪 Sign out'):
+    try:
+        from quantumsafe.ui.virtual_lab import get_gateway
+        viewer=st.session_state.get('qs_monitor_viewer')
+        if viewer:get_gateway().revoke_viewer(viewer['token'])
+    except Exception:pass
     st.session_state.clear();st.rerun()
 if page=='🌐 Devices & Installation':
     from quantumsafe.ui import device_control
@@ -33,4 +38,7 @@ elif page=='🧪 PC B Security Tests':
     from quantumsafe.ui import pc_b_station
     pc_b_station.show(actor)
 elif page=='👥 Team Accounts':admin_page.show(actor)
+elif page=='📈 Security Analytics & Charts':
+    from quantumsafe.ui import analytics_panel
+    analytics_panel.show(actor)
 else:security_monitor.show(actor)

@@ -9,12 +9,10 @@ from . import security_console
 from .. import console_data
 
 
-@st.fragment(run_every='5s')
-def _live_console():
+@st.fragment(run_every='8s')
+def _live_metrics():
     try:
         data,sql_status=security_console.collect()
-        # Sandbox iframe displays read-only data; NO unauthenticated websocket or simulator.
-        components.html(security_console.render_html(data),height=1310,scrolling=True)
         c1,c2,c3,c4=st.columns(4)
         c1.metric('Gateway','RUNNING' if data['gateway_running'] else 'STOPPED')
         c2.metric('Enrolled virtual devices',len(data['devices']))
@@ -55,9 +53,24 @@ def show(actor):
     st.title(f'🛡 QuantumSafe Security Console · v{APP_VERSION}')
     st.caption(f"Logged in: {actor.get('Username','User')} · {'Administrator' if actor.get('RoleName')=='Admin' else 'Security Operator'}")
     st.info('Reference dashboard design integrated with the existing QuantumSafe virtual gateway. Device enrollment and PC B remain in their Administrator panels. The network map is a logical visualization.')
-    _live_console()
     from .virtual_lab import get_gateway
     gateway=get_gateway()
+    if gateway.server:
+        # Keep the browser iframe mounted: it polls the local gateway every 3 s,
+        # avoiding the full iframe recreation/flicker of the previous release.
+        import time
+        state=st.session_state.get('qs_monitor_viewer')
+        if not state or state['expires']<time.time()+60 or state['gateway']!=id(gateway):
+            new_token=gateway.issue_viewer(actor)
+            state={'token':new_token,'expires':time.time()+1200,'gateway':id(gateway)}
+            st.session_state['qs_monitor_viewer']=state
+        components.iframe(f'http://127.0.0.1:{gateway.port}/viewer/{state["token"]}',height=1160,scrolling=True)
+        st.caption('Live viewer refreshes its data without rebuilding the dashboard. Enable browser audio with 🔇 Sound off. Server alarm works independently.')
+    else:
+        st.warning('Virtual gateway is stopped. Administrator: open Devices & Installation and start it to view live console.')
+        data,_=security_console.collect()
+        components.html(security_console.render_html(data),height=1080,scrolling=True)
+    _live_metrics()
     st.subheader('🧠 IDS/IPS Runtime (observed, not simulated packet counts)')
     a,b,c=st.columns(3)
     a.metric('Local virtual containment',len([q for q in gateway.ips.entries() if q['active']]))
@@ -68,4 +81,18 @@ def show(actor):
     if state['last_error']:st.warning('ML shadow issue: '+state['last_error'])
     if state['incompatible']:st.info(f"{state['incompatible']} model route(s) incompatible with observed HTTP telemetry fields. Full TCP/MQTT capture is not present.")
     _admin_alert_tools(actor)
+    if actor.get('RoleName')=='Admin':
+        with st.expander('🔎 System readiness & diagnostics'):
+            state=gateway.alarm_engine
+            d1,d2,d3=st.columns(3)
+            d1.metric('Alarm played',state.played)
+            d2.metric('Alarm failures',state.failures)
+            d3.metric('Virtual IPS active',len([q for q in gateway.ips.entries() if q['active']]))
+            if state.last_error:st.error('Windows alarm problem: '+state.last_error)
+            if gateway.last_persist_error:st.error('SQL event save issue: '+gateway.last_persist_error)
+            try:
+                from ..ml_engine.selector import find_swipl
+                st.write('SWI-Prolog executable:',find_swipl() or 'Not detected (Python rules fallback)')
+            except Exception as exc:st.warning('Prolog runtime check: '+str(exc))
+            st.caption('For complete end-to-end demo: Devices & Installation → device tests → PC B → review Monitoring alerts and alarm diagnostics.')
     st.caption('ML ranking is shadow-only. Virtual HTTP request rejections do not equal network-wide IPS/firewall enforcement.')
