@@ -68,6 +68,21 @@ def live_monitor(gateway):
     st.subheader('🚨 Security incidents')
     st.caption('Windows host alarm is queued immediately by the gateway, including the first qualifying attack. Browser audio is optional fallback.')
     st.caption('Sound is reserved for NEW blocked security incidents. Normal activity and unverified URL reviews never trigger an alarm.')
+    alarm_engine = gateway.alarm_engine
+    left, right = st.columns([1, 2])
+    with left:
+        if st.button('🔊 Test Windows speaker (PC A)', key='test_windows_alarm_091'):
+            if alarm_engine.test_sound():
+                st.info('Windows alarm test queued. Check PC A speakers, sound mixer and diagnostics below.')
+            else:
+                st.error('Could not queue alarm test. See diagnostics.')
+    with right:
+        st.caption(f"Alarm queue accepted: {alarm_engine.total_alerts} | Played/tests completed: {alarm_engine.played} | Audio failures: {alarm_engine.failures}")
+        if alarm_engine.last_error:
+            st.error('Windows alarm error: ' + str(alarm_engine.last_error))
+        elif alarm_engine.total_alerts and not alarm_engine.played:
+            st.warning('Alarm requested but audio not confirmed yet. Try speaker test and refresh.')
+    st.caption('The alarm plays on the machine running the gateway Python process. For a muted audio output or a remote/server host, check Windows Volume Mixer and speaker destination.')
     all_events = snapshot_events(gateway)
     # A session begins with its current events as a baseline: old incidents must not replay.
     if 'qs_alarm_seen_076' not in st.session_state:
@@ -78,7 +93,7 @@ def live_monitor(gateway):
     if fresh is not None:
         st.error('🚨 NEW BLOCKED INCIDENT: ' + str(fresh.get('attack_type') or fresh.get('reason') or 'Security violation'))
     # The alarm control is always available, even when no incidents have happened.
-    components.html(_alarm_html(None if gateway.alarm_engine else (event_identity(fresh) if fresh else None),
+    components.html(_alarm_html(event_identity(fresh) if fresh else None,
                                 fresh.get('device', '') if fresh else ''), height=90)
     blocked_details = [e for e in all_events if alarm_eligible(e)]
     if blocked_details:
