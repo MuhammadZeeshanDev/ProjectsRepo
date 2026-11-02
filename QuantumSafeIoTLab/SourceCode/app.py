@@ -5,6 +5,8 @@ from quantumsafe.version import APP_VERSION
 from quantumsafe.ui import login,admin_page,security_monitor
 
 st.set_page_config(page_title=f'QuantumSafe v{APP_VERSION}',page_icon='🔐',layout='wide')
+from quantumsafe.ui.console_theme import apply_theme
+apply_theme()
 actor_id=st.session_state.get('actor_id')
 if not actor_id:login.show();st.stop()
 try:actor=users.active_actor(int(actor_id))

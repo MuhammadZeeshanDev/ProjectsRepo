@@ -1,0 +1,529 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QuantumSafe IoT Security Console</title>
+
+<style>
+/* Layout: posture banner and KPIs first, then live network map beside the alert feed, traffic trace, device grid.
+   Ink-navy ground, ice-blue signal accent; ok / warn / crit are semantic and separate from the accent. */
+:root{
+  --bg:#E9EEF5; --surface:#FFFFFF; --surface-2:#F2F5FA; --line:#D3DCE8;
+  --fg:#0D1A2B; --muted:#586A80;
+  --accent:#0A68CC; --accent-soft:#DAE9FA; --on-accent:#FFFFFF;
+  --ok:#0B8F63; --ok-soft:#D8F3E8;
+  --warn:#955500; --warn-soft:#FBEBCF;
+  --crit:#C8213B; --crit-soft:#FADADF; --on-crit:#FFFFFF;
+  --f-display:'Arial Narrow','Arial Narrow',sans-serif;
+  --f-body:'system-ui',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'ui-monospace',ui-monospace,Menlo,Consolas,monospace;
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#080F1A; --surface:#0F1A2A; --surface-2:#132035; --line:#21304A;
+  --fg:#E4ECF7; --muted:#8A9DB7;
+  --accent:#52B5FF; --accent-soft:#12304D; --on-accent:#04111F;
+  --ok:#33D49A; --ok-soft:#0F3328;
+  --warn:#F4B544; --warn-soft:#3A2B0C;
+  --crit:#FF6179; --crit-soft:#3E1520; --on-crit:#1A0509;
+  color-scheme:dark; } }
+:root[data-theme="dark"]{
+  --bg:#080F1A; --surface:#0F1A2A; --surface-2:#132035; --line:#21304A;
+  --fg:#E4ECF7; --muted:#8A9DB7;
+  --accent:#52B5FF; --accent-soft:#12304D; --on-accent:#04111F;
+  --ok:#33D49A; --ok-soft:#0F3328;
+  --warn:#F4B544; --warn-soft:#3A2B0C;
+  --crit:#FF6179; --crit-soft:#3E1520; --on-crit:#1A0509;
+  color-scheme:dark; }
+
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font:14px/1.45 var(--f-body);
+  padding-block:16px 32px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px))}
+h1,h2,h3,p{margin:0}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.wrap{max-width:1280px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+button,select{font-family:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* header */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.brand h1{font:700 28px/1 var(--f-display);letter-spacing:.03em}
+.brand p{color:var(--muted);font-size:12px;margin-top:2px}
+.mark .o{fill:none;stroke:var(--accent);stroke-width:1.6}
+.mark .n{fill:var(--accent)}
+.top-r{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:7px;font:500 12px var(--f-mono);padding:6px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
+.chip i{width:8px;height:8px;border-radius:50%;background:var(--warn)}
+.chip[data-mode=live] i{background:var(--ok);animation:blink 1.6s ease-in-out infinite}
+.chip[data-mode=lost] i{background:var(--crit)}
+@keyframes blink{50%{opacity:.3}}
+.btn{font:500 13px var(--f-body);border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:7px 12px;border-radius:8px;cursor:pointer;min-height:36px;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{border-color:var(--accent)}
+.btn:disabled{opacity:.5;cursor:default}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.sm{min-height:30px;padding:4px 10px;font-size:12px}
+.badge{font:600 11px var(--f-mono);min-width:20px;text-align:center;padding:1px 6px;border-radius:999px;background:var(--surface-2);color:var(--muted)}
+.badge.hot{background:var(--crit);color:var(--on-crit)}
+
+/* posture */
+.posture{display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:var(--radius);border:1px solid var(--ok);background:var(--ok-soft);--c:var(--ok)}
+.posture[data-level=elevated]{border-color:var(--warn);background:var(--warn-soft);--c:var(--warn)}
+.posture[data-level=attack]{border-color:var(--crit);background:var(--crit-soft);--c:var(--crit)}
+.beacon{flex:none;width:14px;height:14px;border-radius:50%;background:var(--c);animation:beacon 1.8s ease-out infinite}
+@keyframes beacon{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--c) 60%,transparent)}100%{box-shadow:0 0 0 14px transparent}}
+.posture h2{font:700 30px/1 var(--f-display);letter-spacing:.03em;text-transform:uppercase;color:var(--c)}
+.posture p{margin-top:4px;color:var(--fg);max-width:70ch}
+
+/* kpis */
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media (min-width:760px){.kpis{grid-template-columns:repeat(4,minmax(0,1fr))}}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;min-width:0}
+.kpi .l{font:500 11px var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font:600 40px/1.05 var(--f-display);margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:20px;color:var(--muted);font-weight:500}
+.kpi .s{font-size:12px;color:var(--muted);margin-top:2px}
+.kpi svg{display:block;width:100%;height:22px;margin-top:4px;color:var(--accent)}
+.kpi.threat .v.on{color:var(--crit)}
+
+/* layout */
+.main{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);grid-template-areas:"topo" "alerts" "traffic" "devices"}
+@media (min-width:1000px){.main{grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);grid-template-areas:"topo alerts" "traffic alerts" "devices devices"}}
+.a-topo{grid-area:topo}.a-alerts{grid-area:alerts}.a-traffic{grid-area:traffic}.a-devices{grid-area:devices}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px;min-width:0;display:flex;flex-direction:column}
+.card-h{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin-bottom:10px}
+.card-h h2{font:600 19px/1.1 var(--f-display);letter-spacing:.05em;text-transform:uppercase}
+.sub{color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+select{background:var(--surface-2);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;min-height:36px;font-size:13px;max-width:100%}
+
+/* topology */
+.stage{border:1px solid var(--line);border-radius:8px;background:var(--surface-2);overflow:hidden}
+.stage canvas{display:block;width:100%}
+.legend{display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.legend i{width:14px;height:3px;border-radius:2px;background:var(--accent)}
+.legend i.bad{background:var(--crit)}.legend i.stop{background:var(--ok)}.legend i.warn{background:var(--warn)}.legend i.dash{background:none;border-top:2px dashed var(--accent);height:0}
+
+/* alerts */
+.alerts{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;max-height:600px;overflow:auto;min-height:120px}
+.al{border:1px solid var(--line);border-radius:8px;padding:10px 12px;background:var(--surface-2);display:grid;gap:4px;min-width:0}
+.al.fresh{animation:fresh 1.8s ease-out}
+@keyframes fresh{from{background:var(--accent-soft);border-color:var(--accent)}}
+.al.acked{opacity:.62}
+.al-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.al time{font:400 12px var(--f-mono);color:var(--muted)}
+.sev{font:600 11px var(--f-body);letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.sev-medium .sev{background:var(--warn-soft);color:var(--warn)}
+.sev-high .sev{background:var(--crit-soft);color:var(--crit)}
+.sev-critical .sev{background:var(--crit);color:var(--on-crit)}
+.al h3{font:600 14px/1.3 var(--f-body)}
+.al-meta{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.al-act{font-size:12px;color:var(--ok);font-weight:500}
+.al .btn{justify-self:start;margin-top:2px}
+.empty{color:var(--muted);padding:16px 4px}
+
+/* traffic */
+.chartbox{position:relative;border:1px solid var(--line);border-radius:8px;background:var(--surface-2);overflow:hidden}
+.chartbox canvas{display:block;width:100%}
+.lg{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.lg i{width:14px;height:3px;border-radius:2px}
+.lg .a{background:var(--accent)}.lg .w{background:var(--warn)}.lg .d{background:none;border-top:2px dashed var(--warn);height:0}
+
+/* devices */
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.fchip{font:500 12px var(--f-body);padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer;min-height:32px}
+.fchip[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.devgrid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(250px,1fr))}
+.dev{border:1px solid var(--line);border-radius:8px;background:var(--surface-2);padding:12px;display:grid;gap:10px;min-width:0;--pc:var(--crit)}
+.dev[data-status=attack]{border-color:var(--crit);animation:ring 1.4s ease-out infinite}
+.dev[data-status=quarantined]{border-color:var(--warn);border-style:dashed}
+.dev[data-status=offline]{opacity:.7}
+@keyframes ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--crit) 50%,transparent)}100%{box-shadow:0 0 0 12px transparent}}
+.dev-h{display:flex;gap:10px;align-items:flex-start}
+.code{font:500 11px var(--f-mono);border:1px solid var(--line);border-radius:6px;padding:3px 6px;background:var(--surface);flex:none}
+.dev-n{min-width:0;flex:1}
+.dev-n h3{font:600 14px/1.25 var(--f-body)}
+.dev-n p{font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.pill{display:inline-flex;align-items:center;gap:6px;font:600 11px var(--f-body);padding:3px 9px;border-radius:999px;white-space:nowrap;background:var(--ok-soft);color:var(--ok)}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.s-attack{background:var(--crit-soft);color:var(--crit)}
+.pill.s-attack::before{animation:blink .8s linear infinite}
+.pill.s-quarantined{background:var(--warn-soft);color:var(--warn)}
+.pill.s-offline{background:var(--surface);color:var(--muted);border:1px solid var(--line)}
+.dev-r{display:flex;align-items:baseline;gap:6px}
+.val{font:500 28px/1 var(--f-mono);font-variant-numeric:tabular-nums}
+.unit{color:var(--muted);font-size:12px}
+.spark{margin-left:auto;width:40%;height:30px;align-self:center;color:var(--accent)}
+.dev[data-status=attack] .spark{color:var(--crit)}
+.dev-f{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.auto{font-size:12px;color:var(--muted);min-width:0}
+.auto.fix{color:var(--warn);font-weight:500}
+
+.foot{color:var(--muted);font-size:12px}
+.foot code{font-family:var(--f-mono)}
+
+/* toasts */
+.toasts{position:fixed;left:0;right:0;bottom:0;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none;
+  padding:12px max(16px,env(safe-area-inset-right,0px)) calc(12px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));z-index:20}
+.toast{pointer-events:auto;max-width:460px;width:100%;background:var(--surface);color:var(--fg);border:1px solid var(--crit);border-radius:10px;padding:10px 14px;display:grid;gap:2px;box-shadow:0 8px 28px rgba(0,0,0,.25);animation:rise .25s ease-out}
+.toast strong{font-size:13px;color:var(--crit)}
+.toast span{font-size:13px;overflow-wrap:anywhere}
+@keyframes rise{from{transform:translateY(12px);opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style></head><body>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 40 40" width="38" height="38" aria-hidden="true">
+        <circle class="n" cx="20" cy="20" r="3.4"/>
+        <ellipse class="o" cx="20" cy="20" rx="16" ry="6.5"/>
+        <ellipse class="o" cx="20" cy="20" rx="16" ry="6.5" transform="rotate(60 20 20)"/>
+        <ellipse class="o" cx="20" cy="20" rx="16" ry="6.5" transform="rotate(120 20 20)"/>
+      </svg>
+      <div><h1>QuantumSafe</h1><p>IoT Security · Virtual gateway monitor</p></div>
+    </div>
+    <div class="top-r">
+      <span class="chip" id="mode" data-mode="lost"><i></i><span id="modeText">Initializing</span></span>
+      <button class="btn" id="bell" type="button" aria-label="Jump to unacknowledged alerts">Alerts <span class="badge" id="bellN">0</span></button>
+      <button class="btn" id="theme" type="button">Theme</button>
+    </div>
+  </header>
+
+  <section class="posture" id="posture" data-level="secure">
+    <span class="beacon" aria-hidden="true"></span>
+    <div><h2 id="pTitle">No recent threat</h2><p id="pSub"></p></div>
+  </section>
+
+  <section class="kpis" aria-label="Key figures">
+    <div class="kpi"><div class="l">Recently active devices</div><div class="v" id="kOnline">0</div><div class="s" id="kOnlineSub"></div></div>
+    <div class="kpi threat"><div class="l">Devices targeted recently</div><div class="v" id="kThreat">0</div><div class="s" id="kThreatSub">Recent rejected request targets</div></div>
+    <div class="kpi"><div class="l">Rejected requests</div><div class="v" id="kBlocked">0</div><div class="s">Within visible event history</div></div>
+    <div class="kpi"><div class="l">Gateway activity</div><div class="v"><span id="kPps">0</span> <small>req/1s</small></div>
+      <svg viewBox="0 0 100 22" preserveAspectRatio="none" aria-hidden="true"><polyline id="kSpark" points="" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg></div>
+  </section>
+
+  <main class="main">
+    <section class="card a-topo" aria-labelledby="hTopo">
+      <div class="card-h">
+        <div><h2 id="hTopo">Virtual network map</h2><p class="sub">Registered identities → localhost HTTP gateway. Lines are logical, not observed packet routes.</p></div>
+        <span class="chip">Tests: Administrator → PC B</span>
+      </div>
+      <div class="stage"><canvas id="topo" role="img" aria-label="Network map of the gateway, devices and live traffic"></canvas></div>
+      <div class="legend">
+        <span><i></i>Virtual enrollment</span><span><i class="bad"></i>Recent rejected request</span><span><i class="warn dash"></i>Disabled device</span>
+      </div>
+    </section>
+
+    <section class="card a-alerts" aria-labelledby="hAlerts">
+      <div class="card-h">
+        <div><h2 id="hAlerts">Alert feed</h2><p class="sub">Gateway rejections; severity is based on gateway reason.</p></div>
+        <span class="sub">Acknowledge in controls below</span>
+      </div>
+      <ul class="alerts" id="alerts"></ul>
+    </section>
+
+    <section class="card a-traffic" aria-labelledby="hTraffic">
+      <div class="card-h">
+        <div><h2 id="hTraffic">Gateway requests and rejected ratio</h2><p class="sub">Past 90 seconds · actual stored gateway event samples (not raw network packets).</p></div>
+        <div class="row"><span class="lg"><i class="a"></i>Gateway requests (1s)</span><span class="lg"><i class="w"></i>Rejected request fraction</span><span class="lg"><i class="d"></i>60% fraction guide</span></div>
+      </div>
+      <div class="chartbox"><canvas id="chart" role="img" aria-label="Line chart of packets per second and machine learning anomaly score over the last 90 seconds"></canvas></div>
+    </section>
+
+    <section class="card a-devices" aria-labelledby="hDev">
+      <div class="card-h">
+        <div><h2 id="hDev">Devices</h2><p class="sub">Values come from authenticated local virtual telemetry; offline indicates no recent heartbeat.</p></div>
+        <div class="chips" id="filters" role="group" aria-label="Filter devices">
+          <button class="fchip" type="button" data-f="all" aria-pressed="true">All</button>
+          <button class="fchip" type="button" data-f="ok" aria-pressed="false">Healthy</button>
+          <button class="fchip" type="button" data-f="attn" aria-pressed="false">Needs attention</button>
+        </div>
+      </div>
+      <div class="devgrid" id="devgrid"></div>
+    </section>
+  </main>
+
+  <p class="foot" id="foot">Real observations from the QuantumSafe local virtual gateway. No real LAN packet capture, production IPS or live ML packet scoring is implied.</p>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<script>window.QS_SNAPSHOT = __QS_SNAPSHOT_JSON__;</script>
+<script>
+(function(){
+'use strict';
+var $=function(s,r){return (r||document).querySelector(s)};
+var reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+var pad=function(n){return String(n).padStart(2,'0')};
+var clock=function(d){return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())};
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})};
+var RANK={low:0,medium:1,high:2,critical:3};
+var STATUS_LABEL={online:'Reporting',attack:'Rejected attempt',quarantined:'Disabled',offline:'No heartbeat'};
+
+/* ---------- state ---------- */
+var S={devices:new Map(),order:[],alerts:[],pps:[],anomaly:[],hist:new Map(),blocked:0,mode:'lost',filter:'all'};
+
+var COL={};
+function cssv(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim()}
+function refreshColors(){COL={accent:cssv('--accent'),ok:cssv('--ok'),warn:cssv('--warn'),crit:cssv('--crit'),line:cssv('--line'),fg:cssv('--fg'),muted:cssv('--muted'),surface:cssv('--surface'),s2:cssv('--surface-2')}}
+function statusColor(s){return s==='attack'?COL.crit:s==='quarantined'?COL.warn:s==='offline'?COL.muted:COL.ok}
+function devName(id){var d=S.devices.get(id);return d?d.name:'Network'}
+
+
+/* ---------- event application (shared by demo simulator and live WebSocket) ---------- */
+function apply(ev){
+  if(ev.type==='snapshot'){
+    S.devices.clear();S.order=[];S.hist.clear();S.alerts=[];
+    ev.devices.forEach(function(d){S.devices.set(d.id,Object.assign({value:d.base==null?null:d.base,status:'online',dec:1},d));S.order.push(d.id);S.hist.set(d.id,[])});
+    (ev.alerts||[]).slice().reverse().forEach(function(a){pushAlert(a,true)});
+    S.blocked=ev.blocked_24h||0;
+    buildDevices();renderAlerts();renderKpis();posture();
+  }else if(ev.type==='tick'){
+    S.pps.push(ev.pps);S.anomaly.push(ev.anomaly);
+    if(S.pps.length>90){S.pps.shift();S.anomaly.shift()}
+    ev.devices.forEach(function(u){
+      var d=S.devices.get(u.id);if(!d)return;
+      d.status=u.status;d.value=u.value;
+      var h=S.hist.get(u.id);if(u.value!=null){h.push(u.value);if(h.length>30)h.shift()}
+    });
+    if(ev.blocked_24h!=null)S.blocked=ev.blocked_24h;
+    refreshColors();updateDevices();renderKpis();posture();drawChart();
+    if(reduce)Topo.draw(performance.now());
+  }else if(ev.type==='alert'){
+    pushAlert(ev,false);
+  }
+}
+
+function pushAlert(a,silent){
+  var al={id:a.id,ts:new Date(a.ts),severity:a.severity,title:a.title,engine:a.engine,source_ip:a.source_ip,device_id:a.device_id,action:a.action,ack:!!(a.acknowledged||a.ack)};
+  S.alerts.unshift(al);if(S.alerts.length>40)S.alerts.pop();
+  if(silent)return;
+  renderAlerts(al.id);renderBell();posture();
+  if(RANK[al.severity]>=2)toast(al);
+  
+}
+
+/* ---------- rendering ---------- */
+function renderKpis(){
+  var n=S.order.length,on=0,atk=0,q=0;
+  S.devices.forEach(function(d){if(d.status==='online')on++;if(d.status==='attack')atk++;if(d.status==='quarantined')q++});
+  $('#kOnline').innerHTML=on+' <small>/ '+n+'</small>';
+  $('#kOnlineSub').textContent=q?q+' disabled':(n-on-atk>0?(n-on-atk)+' no recent heartbeat':'All reporting');
+  var t=$('#kThreat');t.textContent=atk;t.className='v'+(atk?' on':'');
+  $('#kBlocked').textContent=S.blocked;
+  var last=S.pps.length?S.pps[S.pps.length-1]:0;$('#kPps').textContent=last.toLocaleString('en-US');
+  var s=S.pps.slice(-40);
+  if(s.length>1){var mn=Math.min.apply(null,s),mx=Math.max.apply(null,s),rg=Math.max(1,mx-mn);
+    $('#kSpark').setAttribute('points',s.map(function(v,i){return (i/(s.length-1)*100).toFixed(1)+','+(20-((v-mn)/rg)*18).toFixed(1)}).join(' '))}
+  var fc=function(f){return S.order.filter(function(id){return match(S.devices.get(id).status,f)}).length};
+  document.querySelectorAll('.fchip').forEach(function(b){var f=b.dataset.f,l={all:'All',ok:'Healthy',attn:'Needs attention'}[f];b.textContent=l+' '+fc(f)});
+}
+function match(status,f){return f==='all'||(f==='ok'&&status==='online')||(f==='attn'&&status!=='online')}
+
+function posture(){
+  var el=$('#posture'),atk=[],q=0,n=S.order.length,on=0,now=Date.now(),recent=0;
+  S.devices.forEach(function(d){if(d.status==='attack')atk.push(d.name);if(d.status==='quarantined')q++;if(d.status==='online')on++});
+  S.alerts.forEach(function(a){if(!a.ack&&RANK[a.severity]>=2&&now-a.ts.getTime()<180000)recent++});
+  var lvl=atk.length?'attack':(q||recent)?'elevated':'secure';
+  el.dataset.level=lvl;
+  $('#pTitle').textContent=lvl==='attack'?'Rejected activity':lvl==='elevated'?'Review recent alerts':(S.order.length?'No recent threat':'Waiting for devices');
+  $('#pSub').textContent=lvl==='attack'?atk.join(', ')+' recently received rejected requests. The HTTP gateway refused these requests; verify the source and credentials.'
+    :lvl==='elevated'?'Unacknowledged high-severity gateway events or disabled virtual devices need attention.'
+    :on+' of '+n+' enrolled virtual devices recently sent signed telemetry. No network-wide protection claim.';
+}
+function renderBell(){
+  var c=S.alerts.filter(function(a){return !a.ack&&RANK[a.severity]>=2}).length,b=$('#bellN');
+  b.textContent=c;b.className='badge'+(c?' hot':'');
+}
+function renderAlerts(freshId){
+  var ul=$('#alerts');
+  if(!S.alerts.length){ul.innerHTML='<li class="empty">No rejected gateway requests in the visible event window.</li>';renderBell();return}
+  ul.innerHTML=S.alerts.map(function(a){
+    return '<li class="al sev-'+a.severity+(a.ack?' acked':'')+(a.id===freshId?' fresh':'')+'">'+
+      '<div class="al-top"><span class="sev">'+a.severity+'</span><time>'+clock(a.ts)+'</time></div>'+
+      '<h3>'+esc(a.title)+'</h3>'+
+      '<p class="al-meta"><span class="mono">'+esc(a.engine)+'</span> · '+esc(a.source_ip)+' to '+esc(devName(a.device_id))+'</p>'+
+      '<p class="al-act">'+esc(a.action)+'</p>'+
+      '<span class="sub">'+(a.ack?'Acknowledged':'Not acknowledged')+'</span></li>';
+  }).join('');
+  renderBell();
+}
+function toast(a){
+  var box=$('#toasts'),t=document.createElement('div');
+  t.className='toast';t.setAttribute('role','status');
+  t.innerHTML='<strong>Security in-charge notified</strong><span>'+esc(a.title)+' on '+esc(devName(a.device_id))+'</span>';
+  box.appendChild(t);while(box.children.length>3)box.removeChild(box.firstChild);
+  setTimeout(function(){if(t.parentNode)t.parentNode.removeChild(t)},6500);
+}
+
+function buildDevices(){
+  var g=$('#devgrid');g.innerHTML='';
+  S.order.forEach(function(id){
+    var d=S.devices.get(id),el=document.createElement('article');
+    el.className='dev';el.dataset.id=id;
+    el.innerHTML='<div class="dev-h"><span class="code">'+esc(d.code)+'</span><div class="dev-n"><h3>'+esc(d.name)+'</h3><p>'+esc(d.zone)+' · <span class="mono">'+esc(d.ip)+'</span></p></div><span class="pill" data-k="pill"></span></div>'+
+      '<div class="dev-r"><span class="val" data-k="val"></span><span class="unit">'+esc(d.unit)+'</span><svg class="spark" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true"><polyline data-k="spark" points="" fill="none" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/></svg></div>'+
+      '<div class="dev-f"><span class="auto" data-k="auto"></span><span class="sub">Open Devices panel to manage</span></div>';
+    g.appendChild(el);
+  });
+  Topo.layout();updateDevices();
+}
+function updateDevices(){
+  S.order.forEach(function(id){
+    var d=S.devices.get(id),el=$('.dev[data-id="'+id+'"]');if(!el)return;
+    el.hidden=!match(d.status,S.filter);
+    el.dataset.status=d.status;
+    var p=$('[data-k=pill]',el);p.className='pill s-'+d.status;p.textContent=STATUS_LABEL[d.status];
+    $('[data-k=val]',el).textContent=d.value==null?'—':Number(d.value).toFixed(d.dec==null?1:d.dec);
+    var h=S.hist.get(id),sp=$('[data-k=spark]',el);
+    if(h.length>1){var mn=Math.min.apply(null,h),mx=Math.max.apply(null,h),span=Math.max(1,mx-mn),ymin=mn-span*.3,ymax=mx+span*.3;
+      sp.setAttribute('points',h.map(function(v,i){return (i/(h.length-1)*100).toFixed(1)+','+(27-Math.max(0,Math.min(1,(v-ymin)/(ymax-ymin)))*26).toFixed(1)}).join(' '))}
+    var a=$('[data-k=auto]',el);
+    a.className='auto';
+    a.textContent=d.status==='offline'?'No signed heartbeat in 30s':d.status==='quarantined'?'Enrollment disabled (local)':d.status==='attack'?'Rejected request targeted device':'Recent authenticated virtual telemetry';
+  });
+}
+
+/* ---------- traffic chart ---------- */
+function fmtK(v){return v>=1000?(v/1000).toFixed(v%1000?1:0)+'k':String(v)}
+function drawChart(){
+  var cv=$('#chart'),W=cv.parentElement.clientWidth,H=210,dpr=window.devicePixelRatio||1;
+  if(!W)return;
+  if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);cv.style.height=H+'px'}
+  var c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);
+  var L=44,R=34,T=10,B=22,w=W-L-R,h=H-T-B,N=90,pps=S.pps,an=S.anomaly;
+  var mx=Math.max(5,Math.ceil(Math.max.apply(null,pps.concat([0]))/5)*5);
+  var X=function(i){return L+w*((N-pps.length+i)/(N-1))},Yp=function(v){return T+h-(v/mx)*h},Ya=function(v){return T+h-v*h};
+  c.font='10px "ui-monospace",monospace';c.lineWidth=1;
+  [0,.5,1].forEach(function(f){
+    var y=T+h-f*h;c.beginPath();c.moveTo(L,y);c.lineTo(L+w,y);c.strokeStyle=COL.line;c.setLineDash(f?[2,4]:[]);c.stroke();c.setLineDash([]);
+    c.fillStyle=COL.muted;c.textAlign='right';c.textBaseline='middle';c.fillText(fmtK(Math.round(mx*f)),L-6,y);
+    c.textAlign='left';c.fillText(f.toFixed(1),L+w+6,y);
+  });
+  c.textAlign='left';c.textBaseline='top';c.fillStyle=COL.muted;c.fillText('90 s ago',L,H-B+8);
+  c.textAlign='right';c.fillText('now',L+w,H-B+8);
+  var ty=Ya(.6);c.beginPath();c.moveTo(L,ty);c.lineTo(L+w,ty);c.strokeStyle=COL.warn;c.setLineDash([5,4]);c.lineWidth=1;c.stroke();c.setLineDash([]);
+  if(pps.length>1){
+    c.beginPath();c.moveTo(X(0),T+h);pps.forEach(function(v,i){c.lineTo(X(i),Yp(v))});c.lineTo(X(pps.length-1),T+h);c.closePath();
+    c.globalAlpha=.16;c.fillStyle=COL.accent;c.fill();c.globalAlpha=1;
+    c.beginPath();pps.forEach(function(v,i){i?c.lineTo(X(i),Yp(v)):c.moveTo(X(i),Yp(v))});c.strokeStyle=COL.accent;c.lineWidth=1.6;c.stroke();
+    c.lineWidth=1.8;
+    for(var i=1;i<an.length;i++){c.beginPath();c.moveTo(X(i-1),Ya(an[i-1]));c.lineTo(X(i),Ya(an[i]));c.strokeStyle=an[i]>=.6?COL.crit:COL.warn;c.stroke()}
+    var k=pps.length-1;
+    c.beginPath();c.arc(X(k),Yp(pps[k]),3.2,0,6.283);c.fillStyle=COL.accent;c.fill();
+    c.beginPath();c.arc(X(k),Ya(an[k]),3.2,0,6.283);c.fillStyle=an[k]>=.6?COL.crit:COL.warn;c.fill();
+  }
+}
+
+/* ---------- live network map ---------- */
+var Topo={
+  cv:null,ctx:null,W:0,H:0,dpr:1,gw:{x:0,y:0,r:26},ext:{x:34,y:0},pos:new Map(),packets:[],flashes:[],attacks:new Map(),sweep:0,last:0,acc:0,vid:0,
+  init:function(){
+    this.cv=$('#topo');this.ctx=this.cv.getContext('2d');
+    var self=this;if(window.ResizeObserver)new ResizeObserver(function(){self.resize();drawChart()}).observe(this.cv.parentElement);
+    this.resize(); /* topology static: no invented packet animation */
+  },
+  resize:function(){
+    var w=this.cv.parentElement.clientWidth;if(!w)return;
+    this.W=w;this.H=w<520?330:370;this.dpr=window.devicePixelRatio||1;
+    this.cv.width=Math.round(this.W*this.dpr);this.cv.height=Math.round(this.H*this.dpr);this.cv.style.height=this.H+'px';
+    this.layout();this.draw(performance.now());
+  },
+  layout:function(){
+    var W=this.W,H=this.H;if(!W)return;
+    this.gw={x:Math.min(W*.38,230),y:H/2,r:26};this.ext={x:34,y:H/2};
+    var n=S.order.length,rx=Math.min(W-this.gw.x-36,260),ry=H*.37;this.pos.clear();
+    for(var i=0;i<n;i++){var th=(n===1?0:(-78+156*i/(n-1)))*Math.PI/180;
+      this.pos.set(S.order[i],{x:this.gw.x+rx*Math.cos(th),y:this.gw.y+ry*Math.sin(th)})}
+  },
+  attackStart:function(id,dev){this.attacks.set(id,{dev:dev,blocked:false,acc:0})},
+  attackBlocked:function(id){var a=this.attacks.get(id);if(a)a.blocked=true},
+  attackEnd:function(id){this.attacks.delete(id)},
+  alertVisual:function(dev){var id='v'+(++this.vid),self=this;this.attackStart(id,dev);
+    setTimeout(function(){self.attackBlocked(id)},900);setTimeout(function(){self.attackEnd(id)},3200)},
+  frame:function(t){
+    var dt=Math.min(64,t-(this.last||t));this.last=t;this.sweep+=dt*.0035;
+    this.acc+=dt;while(this.acc>140){this.acc-=140;this.normal(t)}
+    var self=this;this.attacks.forEach(function(a){a.acc+=dt;while(a.acc>75){a.acc-=75;self.bad(a,t)}});
+    var keep=[],done=[];this.packets.forEach(function(p){(t-p.t0>=p.dur?done:keep).push(p)});
+    this.packets=keep;done.forEach(function(p){if(p.end)p.end(t)});
+    this.flashes=this.flashes.filter(function(f){return t-f.t0<f.dur});
+    this.draw(t);requestAnimationFrame(function(x){self.frame(x)});
+  },
+  normal:function(t){
+    var ids=S.order.filter(function(id){var s=S.devices.get(id).status;return s==='online'||s==='attack'});
+    if(!ids.length||!this.pos.get(ids[0]))return;
+    var id=ids[Math.floor(Math.random()*ids.length)],p=this.pos.get(id),g=this.gw,out=Math.random()<.5;
+    this.packets.push({a:out?{x:g.x,y:g.y}:p,b:out?p:{x:g.x,y:g.y},t0:t,dur:700+Math.random()*500,bad:false});
+  },
+  bad:function(a,t){
+    var g=this.gw,e=this.ext,self=this;
+    this.packets.push({a:{x:e.x,y:e.y},b:{x:g.x,y:g.y},t0:t,dur:520,bad:true,end:function(tt){
+      if(a.blocked){self.flashes.push({x:g.x-g.r-10,y:g.y,t0:tt,dur:520,type:'block'})}
+      else if(Math.random()<.5){var p=self.pos.get(a.dev);if(p)self.packets.push({a:{x:g.x,y:g.y},b:p,t0:tt,dur:520,bad:true,end:function(t3){self.flashes.push({x:p.x,y:p.y,t0:t3,dur:420,type:'hit'})}})}
+    }});
+  },
+  draw:function(now){
+    if(!this.ctx||!this.W||!COL.line)return;
+    var c=this.ctx,W=this.W,H=this.H,g=this.gw,e=this.ext,self=this;
+    c.setTransform(this.dpr,0,0,this.dpr,0,0);c.clearRect(0,0,W,H);c.lineWidth=1;
+    S.order.forEach(function(id){var d=S.devices.get(id),p=self.pos.get(id);if(!d||!p)return;
+      c.beginPath();c.moveTo(g.x,g.y);c.lineTo(p.x,p.y);
+      if(d.status==='quarantined'){c.setLineDash([3,4]);c.strokeStyle=COL.warn;c.globalAlpha=.7}
+      else if(d.status==='attack'){c.setLineDash([]);c.strokeStyle=COL.crit}
+      else{c.setLineDash([]);c.strokeStyle=COL.line}
+      c.stroke();c.setLineDash([]);c.globalAlpha=1});
+    var atk=this.attacks.size>0;
+    c.beginPath();c.moveTo(e.x,e.y);c.lineTo(g.x,g.y);c.strokeStyle=atk?COL.crit:COL.line;c.stroke();
+    c.beginPath();c.arc(e.x,e.y,9,0,6.283);c.fillStyle=COL.surface;c.fill();c.lineWidth=2;c.strokeStyle=atk?COL.crit:COL.muted;c.stroke();c.lineWidth=1;
+    c.font='10px "ui-monospace",monospace';c.textAlign='center';c.textBaseline='middle';c.fillStyle=COL.muted;c.fillText('Sources',e.x,e.y+24);
+    this.packets.forEach(function(p){
+      var k=Math.min(1,(now-p.t0)/p.dur),k0=Math.max(0,k-.14),col=p.bad?COL.crit:COL.accent;
+      var x=p.a.x+(p.b.x-p.a.x)*k,y=p.a.y+(p.b.y-p.a.y)*k,x0=p.a.x+(p.b.x-p.a.x)*k0,y0=p.a.y+(p.b.y-p.a.y)*k0;
+      c.beginPath();c.moveTo(x0,y0);c.lineTo(x,y);c.strokeStyle=col;c.lineWidth=2;c.stroke();
+      c.beginPath();c.arc(x,y,2.6,0,6.283);c.fillStyle=col;c.fill();c.lineWidth=1});
+    c.beginPath();c.arc(g.x,g.y,g.r,0,6.283);c.fillStyle=COL.surface;c.fill();c.lineWidth=2;c.strokeStyle=COL.accent;c.stroke();
+    c.beginPath();c.arc(g.x,g.y,g.r+8,0,6.283);c.lineWidth=1;c.strokeStyle=COL.line;c.stroke();
+    c.beginPath();c.arc(g.x,g.y,g.r+8,this.sweep,this.sweep+1.1);c.lineWidth=2.5;c.strokeStyle=COL.accent;c.stroke();c.lineWidth=1;
+    c.fillStyle=COL.fg;c.font='500 10px "ui-monospace",monospace';c.fillText('HTTP',g.x,g.y-5);c.fillText('GATE',g.x,g.y+7);
+    S.order.forEach(function(id){var d=S.devices.get(id),p=self.pos.get(id);if(!d||!p)return;
+      var col=statusColor(d.status);
+      if(d.status==='attack'){var ph=(now/700)%1;c.beginPath();c.arc(p.x,p.y,7+ph*14,0,6.283);c.globalAlpha=1-ph;c.strokeStyle=col;c.lineWidth=2;c.stroke();c.globalAlpha=1;c.lineWidth=1}
+      if(d.status==='quarantined'){c.beginPath();c.arc(p.x,p.y,12,0,6.283);c.setLineDash([3,3]);c.strokeStyle=COL.warn;c.stroke();c.setLineDash([])}
+      c.beginPath();c.arc(p.x,p.y,7,0,6.283);
+      if(d.status==='offline'){c.fillStyle=COL.surface;c.fill();c.strokeStyle=COL.muted;c.lineWidth=1.5;c.stroke();c.lineWidth=1}
+      else{c.fillStyle=col;c.fill()}
+      c.fillStyle=COL.muted;c.font='9px "ui-monospace",monospace';c.textAlign='center';c.textBaseline='top';c.fillText(d.code,p.x,p.y+13)});
+    this.flashes.forEach(function(f){
+      var k=(now-f.t0)/f.dur,col=f.type==='block'?COL.ok:COL.crit;
+      c.beginPath();c.arc(f.x,f.y,6+k*18,0,6.283);c.globalAlpha=Math.max(0,1-k);c.strokeStyle=col;c.lineWidth=2;c.stroke();
+      if(f.type==='block'){c.fillStyle=col;c.font='500 10px "ui-monospace",monospace';c.textAlign='center';c.textBaseline='bottom';c.fillText('BLOCKED',g.x,g.y-g.r-14)}
+      c.globalAlpha=1;c.lineWidth=1});
+  }
+};
+
+/* ---------- controls (read-only; all writes go through authenticated Streamlit panels) ---------- */
+function init(){
+  refreshColors();
+  $('#bell').addEventListener('click',function(){$('#hAlerts').scrollIntoView({behavior:reduce?'auto':'smooth',block:'start'})});
+  $('#filters').addEventListener('click',function(e){var b=e.target.closest('.fchip');if(!b)return;S.filter=b.dataset.f;
+    document.querySelectorAll('.fchip').forEach(function(x){x.setAttribute('aria-pressed',String(x===b))});updateDevices()});
+  function setTheme(t){document.documentElement.setAttribute('data-theme',t);try{localStorage.setItem('qil-theme',t)}catch(e){}refreshColors();drawChart();Topo.draw(performance.now())}
+  try{var theme=localStorage.getItem('qil-theme');if(theme==='dark'||theme==='light')document.documentElement.setAttribute('data-theme',theme)}catch(e){}
+  $('#theme').addEventListener('click',function(){var cur=document.documentElement.getAttribute('data-theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');setTheme(cur==='dark'?'light':'dark')});
+  refreshColors();Topo.init();
+  var data=window.QS_SNAPSHOT;
+  apply({type:'snapshot',devices:data.devices,alerts:data.alerts,blocked_24h:data.blocked_24h});
+  var n=data.traffic.requests.length;
+  for(var i=0;i<n;i++){S.pps.push(data.traffic.requests[i]);S.anomaly.push(data.traffic.rejected_fraction[i]);}
+  var mode=$('#mode');mode.dataset.mode=data.gateway_running?'live':'lost';
+  $('#modeText').textContent=data.gateway_running?'Virtual gateway active':'Gateway stopped';
+  $('#foot').textContent=data.footer;
+  drawChart();renderKpis();posture();Topo.draw(performance.now());
+  window.addEventListener('resize',function(){drawChart();Topo.resize()});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>
+
+</body></html>

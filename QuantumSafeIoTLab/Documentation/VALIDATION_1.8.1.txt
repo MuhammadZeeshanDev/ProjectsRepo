@@ -1,0 +1,8 @@
+QuantumSafe UI reference integration — validation
+- Source/reference: /mnt/data/QuantumIoTLab.zip (19 entries, includes static/index.html and independent FastAPI demo)
+- New backend adapter tests: 10 PASS
+- v1.8 basic regression tests: 13 PASS (including training checks)
+- Client JS syntax (Node.js): PASS
+- Chromium UI preview: PASS / 4 cards / 1 alert / no JavaScript page errors
+- ZIP inspection/compile: PASS before packaging
+- Windows Streamlit, SQL Server, SWI-Prolog, physical IoT hardware: NOT RUN HERE
