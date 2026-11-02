@@ -19,7 +19,7 @@ def send_test(test,device='virtual-cctv-01',port=PORT):
  attempts=5 if test.endswith('_repeated') else 1
  results=[]
  for i in range(attempts):
-  payload={'device':device,'nonce':f'pc-b-{test}-{i}','value':42,'token':'untrusted-client','signature':'0'*64}
+  payload={'device':device,'nonce':f'pc-b-{test}-{i}','value':42,'token':'untrusted-client','device_token':'untrusted-device','signature':'0'*64}
   req=Request(f'http://127.0.0.1:{port}/telemetry',data=json.dumps(payload).encode(),headers={'Content-Type':'application/json'},method='POST')
   try:
    with urlopen(req,timeout=3) as response: results.append(json.loads(response.read()))

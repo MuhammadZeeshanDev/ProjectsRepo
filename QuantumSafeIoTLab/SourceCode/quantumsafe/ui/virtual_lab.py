@@ -213,8 +213,8 @@ def show(actor):
         message_test(gateway)
     st.divider()
     st.subheader('📡 Registered virtual devices')
-    st.dataframe(pd.DataFrame([{'Device ID':k,'Device':v,'Connection':'Virtual / registered','KEM capability':'Enabled in lab'} for k,v in gateway.registered_devices.items()]),hide_index=True,use_container_width=True)
-    st.caption('Registered means configured in this virtual gateway; not proof of a physical connection. KEM capability is a lab assumption, not a completed handshake.')
+    st.dataframe(pd.DataFrame([{'Device ID':k,'Device':v,'Connection':'Virtual / registered','Identity':'Per-device credential required','KEM capability':'Self-test only'} for k,v in gateway.registered_devices.items()]),hide_index=True,use_container_width=True)
+    st.caption('Registered means configured in this virtual gateway; not proof of a physical connection. Each virtual device now has its own secret credential and HMAC key. KEM self-tests do not establish secure sessions.')
     st.info('Connection check: use a trusted device test to generate valid telemetry. ACTIVE (observed) lasts 30 seconds; then it becomes IDLE. Invalid PC B requests never count as a successful connection.')
     if actor['RoleName']=='Admin':
         st.subheader('🔐 Test ML-KEM on every virtual device')
@@ -250,8 +250,8 @@ def show(actor):
         if gateway.last_persist_error:
             st.error('Last SQL event save failed: ' + gateway.last_persist_error)
         with st.expander('🧪 Why was this request allowed or blocked?'):
-            st.write('CCTV/Router/Sensor: valid token + valid HMAC signature + unused nonce + within rate limit → ALLOW.')
-            st.write('Unauthorized: wrong token → BLOCK. Tampered: message changed after signing → BLOCK. Replay: reused nonce → BLOCK. Rate limit: more than 8 requests per 10 seconds → BLOCK.')
+            st.write('CCTV/Router/Sensor: valid gateway token + device-specific credential + device-specific HMAC signature + unused nonce + within rate limit → ALLOW.')
+            st.write('Unauthorized: wrong device credential → BLOCK. Tampered: message changed after signing → BLOCK. Replay: reused nonce → BLOCK. Rate limit: more than 8 requests per 10 seconds → BLOCK.')
             st.caption('These are application-level HTTP rules, NOT Random Forest predictions or captured network packets.')
     live_monitor(gateway)
     st.divider()

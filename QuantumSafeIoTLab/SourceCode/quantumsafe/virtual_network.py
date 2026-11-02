@@ -24,6 +24,9 @@ class VirtualGateway:
         self.thread = None
         self.port = None
         self.registered_devices = {'virtual-cctv-01':'CCTV camera', 'virtual-router-01':'Router', 'virtual-sensor-01':'Temperature sensor'}
+        # Independent credentials per enrolled virtual device; never exposed to PC B.
+        self.device_keys = {device: secrets.token_bytes(32) for device in self.registered_devices}
+        self.device_tokens = {device: secrets.token_urlsafe(24) for device in self.registered_devices}
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
 
@@ -72,7 +75,7 @@ class VirtualGateway:
 
     def sign(self, device, nonce, value):
         msg = json.dumps([device, nonce, value], separators=(',', ':'), ensure_ascii=True).encode()
-        return hmac.new(self.key, msg, hashlib.sha256).hexdigest()
+        return hmac.new(self.device_keys[device], msg, hashlib.sha256).hexdigest()
 
     def evaluate(self, data, source_ip="local"):
         device = str(data.get('device',''))[:64]
@@ -82,10 +85,12 @@ class VirtualGateway:
         authenticated = hmac.compare_digest(str(data.get('token','')), self.token)
         now = time.monotonic()
         with self.lock:
-            if not authenticated:
-                decision, reason = 'BLOCK', 'Invalid device token'
-            elif device not in self.registered_devices:
+            if device not in self.registered_devices:
                 decision, reason = 'BLOCK', 'Device is not registered'
+            elif not authenticated:
+                decision, reason = 'BLOCK', 'Invalid gateway token'
+            elif not hmac.compare_digest(str(data.get('device_token', '')), self.device_tokens[device]):
+                decision, reason = 'BLOCK', 'Invalid per-device credential'
             elif not device or not nonce or not isinstance(value,(int,float,str)) or isinstance(value,bool):
                 decision, reason = 'BLOCK', 'Invalid telemetry'
             elif not hmac.compare_digest(signature, self.sign(device,nonce,value)):
@@ -103,6 +108,8 @@ class VirtualGateway:
                     decision, reason = 'ALLOW', 'Authenticated and integrity verified'
             attack_type, affected, precaution = {
                 'Invalid device token': ('Unauthorized connection', 'Device access', 'Verify device enrollment and source'),
+                'Invalid gateway token': ('Unauthorized connection', 'Gateway access', 'Verify authorized sender'),
+                'Invalid per-device credential': ('Device impersonation attempt', 'Device identity', 'Verify enrolled device credentials and rotate compromised credentials'),
                 'Device is not registered': ('Unknown device identity', 'Device registry', 'Review attempted device identity'),
                 'Message integrity check failed': ('Message tampering', 'Telemetry integrity', 'Reject modified data; inspect sender'),
                 'Replay nonce detected': ('Replay attempt', 'Session freshness', 'Require unique nonces'),
@@ -110,7 +117,7 @@ class VirtualGateway:
             }.get(reason, ('No confirmed attack', 'Device telemetry', 'Continue monitoring'))
             event = {'event_id':uuid.uuid4().hex, 'attack_type': attack_type, 'affected_component': affected, 'precaution': precaution, 'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
-                     'request_type':'telemetry', 'source_ip':source_ip}
+                     'request_type':'telemetry', 'source_ip':source_ip, 'identity_verified': decision == 'ALLOW'}
             self.events.appendleft(event)
         # Never hold the gateway lock while performing database I/O.
         # A failed DB write does not change the gateway's security decision.
@@ -131,10 +138,10 @@ class VirtualGateway:
             if device_override not in self.registered_devices: raise ValueError('Unknown virtual device')
             device = device_override
         nonce = secrets.token_hex(12)
-        payload = {'device':device,'nonce':nonce,'value':42,'token':self.token}
+        payload = {'device':device,'nonce':nonce,'value':42,'token':self.token, 'device_token':self.device_tokens[device]}
         payload['signature'] = self.sign(device,nonce,payload['value'])
         if scenario == 'Unauthorized access':
-            payload['token'] = 'invalid-token'
+            payload['device_token'] = 'invalid-device-credential'
         if scenario == 'Tampered message':
             payload['value'] = 999
         if scenario == 'Replay attack':
