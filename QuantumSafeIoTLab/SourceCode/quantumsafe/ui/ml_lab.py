@@ -92,6 +92,9 @@ def show(actor):
                     st.caption(f'Upload size: {dataset.size / 1024**3:.3f} GiB. Browser upload can require substantial RAM; local file path is safer for 3 GiB.')
         if columns:
             label = st.selectbox('Target label / attack class', columns, key='train_label')
+            target_mode = st.radio('Target preparation', ['Use selected label as-is (2–100 classes)', 'Convert to binary: normal vs attack'], horizontal=True, key='qs_target_mode')
+            normal_value = st.text_input('Exact normal class value (case-insensitive; other values become attack)', value='Normal', key='qs_normal_value') if target_mode.startswith('Convert') else ''
+            st.caption('Choose a real attack-label column, not an IP, timestamp or unique record ID. Binary conversion requires a verified normal-class name.')
             features = st.multiselect('Input features (maximum 30)', [c for c in columns if c != label],
                                       default=[c for c in columns if c != label][:min(10, len(columns)-1)], max_selections=30)
             a, b, c = st.columns(3)
@@ -107,14 +110,23 @@ def show(actor):
                                 sample = representative_sample(stage_upload(dataset, Path(tmp)/'uploaded.csv'), features, label)
                         else:
                             sample = representative_sample(local_path, features, label)
+                        if normal_value:
+                            observed = sample['sample'][label].dropna().astype(str).str.strip().str.casefold()
+                            if normal_value.strip().casefold() not in set(observed):
+                                raise ValueError(f'Normal class {normal_value!r} not present in sampled target. Choose correct label or exact normal value.')
+                            sample['sample'][label] = observed.ne(normal_value.strip().casefold()).map({False:'normal', True:'attack'})
                         raw = sample['sample'].to_csv(index=False).encode('utf-8')
                         if len(raw) > MAX_UPLOAD:
                             raise ValueError('Selected feature sample exceeds 60 MiB; choose fewer features or shorter categorical values.')
                         result = run_experiment(raw, label, features, algo, 0.3 if split == '70/30' else 0.2, folds)
+                        result['target_mode'] = 'binary_normal_vs_attack' if normal_value else 'original_multiclass'
                         result['truncated_to_first_rows'] = sample['sampled_rows'] < sample['total_rows']
                         result['source_sample'] = {k:v for k,v in sample.items() if k != 'sample'}
                         st.session_state['qs_training_result'] = result
                         st.session_state['qs_training_details'] = (sample['source_file'], label, split, folds)
+                        from ..training_history import save_run
+                        run_id = save_run(result, sample['source_file'], label)
+                        st.session_state['qs_last_run_id'] = run_id
                     st.success(f"Training finished on {sample['sampled_rows']:,} sampled rows from {sample['total_rows']:,} parsed CSV rows.")
                 except Exception as exc:
                     st.error('Training failed: '+type(exc).__name__+': '+str(exc))
@@ -122,7 +134,8 @@ def show(actor):
             st.caption('Choose an accessible CSV to configure training.')
         result=st.session_state.get('qs_training_result')
         if result:
-            st.subheader('Last completed experiment (session only)')
+            st.subheader('Last completed training')
+            st.caption('Metrics are saved locally. Checkpoint is saved separately using the button below.')
             st.write('Algorithm:',result['algorithm'],' • Split:',result['split'],' • Training records:',result['training_rows'],' • Test records:',result['test_rows'])
             st.dataframe(pd.DataFrame(result['folds']),hide_index=True,use_container_width=True)
             st.caption('Each validation fold stays separate; held-out test metrics are reported independently.')
@@ -161,6 +174,11 @@ def show(actor):
             st.caption('Prediction CSV saved at the local path above. Check free disk space: output can be larger than the input. These are offline predictions, NOT live gateway detections.')
     with tabs[2]:
         _model_library()
+        from ..training_history import recent_runs
+        st.subheader('Saved training history (persistent)')
+        rows = recent_runs()
+        if rows: st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        else: st.info('No completed training runs saved yet.')
     with tabs[3]:
         from . import ai_advisor_page
         ai_advisor_page.show_embedded(actor)

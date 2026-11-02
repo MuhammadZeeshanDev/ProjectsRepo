@@ -10,11 +10,11 @@ def show(actor):
     st.title('🌐 LAN Lab & Device Manager')
     st.caption('Control virtual device enrollment and inspect private-LAN connectivity. Physical discovery, remote device control and LAN-wide packet detection are not implemented.')
     gateway = get_gateway()
-    tab_devices, tab_lan = st.tabs(['📟 Device inventory', '🔗 Private LAN connection'])
+    tab_devices, tab_lan = st.tabs(['📟 Device inventory', '🔗 Secure LAN messaging'])
     with tab_devices:
         _devices(gateway, actor)
     with tab_lan:
-        st.info('Private LAN communication uses a separate ML-KEM/AES-GCM message listener. Its shared-secret protocol is NOT yet connected to the virtual HTTP device enrollment registry.')
+        st.info('Secure LAN messaging is an optional device-to-device encrypted communication demo, separate from PC B. PC B is the independent attacker console; it does not belong in the device manager. This legacy LAN listener is not linked to enrolled HTTP devices.')
         from . import lan_page
         lan_page.show(actor)
 
