@@ -33,32 +33,22 @@ class VirtualGateway:
         self.alarm_engine = AlarmEngine()
 
     def _reload_registry(self):
-        creds = self.registry.active_credentials()
-        self.registered_devices = {k: val[0] for k, val in creds.items()}
-        self.device_keys = {k: val[1] for k, val in creds.items()}
-        self.device_tokens = {k: val[2] for k, val in creds.items()}
+        credentials=self.registry.credentials()
+        self.registered_devices={d:r[0] for d,r in credentials.items()}
+        self.device_keys={d:r[1] for d,r in credentials.items()}
+        self.device_tokens={d:r[2] for d,r in credentials.items()}
 
-    def manage_device(self, action, device_id, role, actor='Administrator', name=None, kind=None):
-        """Administrator-only atomic lifecycle operation, immediately enforced by HTTP handler."""
-        require_role(role, ('Admin',))
+    def manage_device(self,action,device_id,actor,*,name=None,kind=None,virtual_ip='',virtual_mac=''):
+        # Authorization enforced by the service, not just hidden UI buttons.
+        require_role(actor.get('RoleName'),('Admin',))
         with self.lock:
-            if action == 'enroll':
-                self.registry.enroll(device_id, name, kind)
-            elif action == 'disable':
-                self.registry.set_state(device_id, 'disabled')
-            elif action == 'enable':
-                self.registry.set_state(device_id, 'active')
-            elif action == 'retire':
-                self.registry.set_state(device_id, 'retired')
-            elif action == 'rotate':
-                self.registry.rotate(device_id)
-            else:
-                raise ValueError('Unsupported operation')
+            result=self.registry.apply(action,device_id,name=name,kind=kind,
+                                       virtual_ip=virtual_ip,virtual_mac=virtual_mac,
+                                       actor=actor.get('Username','Admin'))
             self._reload_registry()
-            # Cached nonces/call history of the former identity must not outlive rotation.
-            self.nonces = {item for item in self.nonces if item[0] != device_id}
-            self.calls.pop(device_id, None)
-        self.registry.audit(action, device_id, actor)
+            self.nonces={n for n in self.nonces if n[0]!=result}
+            self.calls.pop(result,None)
+            return result
 
     def start(self, port=8765):
         if self.server:
@@ -147,7 +137,8 @@ class VirtualGateway:
             }.get(reason, ('No confirmed attack', 'Device telemetry', 'Continue monitoring'))
             event = {'event_id':uuid.uuid4().hex, 'attack_type': attack_type, 'affected_component': affected, 'precaution': precaution, 'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
                      'device':device,'decision':decision,'reason':reason,'source':'LOCAL_HTTP',
-                     'request_type':'telemetry', 'source_ip':source_ip, 'identity_verified': decision == 'ALLOW'}
+                     'request_type':'telemetry', 'source_ip':source_ip, 'identity_verified': decision == 'ALLOW',
+                     'reading':value if decision=='ALLOW' and isinstance(value,(int,float)) and not isinstance(value,bool) else None}
             self.events.appendleft(event)
         # Alarm is queued on the FIRST qualifying request, not on a UI refresh.
         self.alarm_engine.notify(event)
@@ -162,7 +153,7 @@ class VirtualGateway:
                 self.last_persist_error = f'{type(exc).__name__}: {exc}'
         return event
 
-    def send(self, scenario, device_override=None):
+    def send(self, scenario, device_override=None, reading=42):
         if not self.server:
             raise RuntimeError('Start the virtual gateway first')
         device = {'CCTV':'virtual-cctv-01','Router':'virtual-router-01','Sensor':'virtual-sensor-01'}.get(scenario,'virtual-cctv-01')
@@ -170,7 +161,7 @@ class VirtualGateway:
             if device_override not in self.registered_devices: raise ValueError('Unknown virtual device')
             device = device_override
         nonce = secrets.token_hex(12)
-        payload = {'device':device,'nonce':nonce,'value':42,'token':self.token, 'device_token':self.device_tokens[device]}
+        payload = {'device':device,'nonce':nonce,'value':reading,'token':self.token, 'device_token':self.device_tokens[device]}
         payload['signature'] = self.sign(device,nonce,payload['value'])
         if scenario == 'Unauthorized access':
             payload['device_token'] = 'invalid-device-credential'

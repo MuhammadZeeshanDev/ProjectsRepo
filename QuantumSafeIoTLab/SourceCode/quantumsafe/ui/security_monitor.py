@@ -13,7 +13,7 @@ def _render():
     from .. import gateway_event_store, db
     from ..ml_engine import registry
     st.subheader('🟢 Local Security Monitoring')
-    st.caption('Virtual gateway observations and offline/shadow IDS results. Not a verified whole-network firewall.')
+    st.caption('Real-time virtual device readings and security incidents; ML route suggestions are shadow-only.')
     status='Unavailable';gateway_events=[]
     try:
         status='Connected' if db.database_ready() else 'Unavailable'
@@ -21,6 +21,39 @@ def _render():
             gateway_events=gateway_event_store.recent_events(150)
     except Exception:
         pass
+    # Live virtual devices are displayed even when SQL Server has no records yet.
+    # Only authenticated recent HTTP events count as current connection evidence.
+    from .virtual_lab import get_gateway, snapshot_events
+    gw=get_gateway()
+    live_events=snapshot_events(gw)
+    st.subheader('🌐 Live virtual gateway & device status')
+    st.metric('Virtual gateway','🟢 RUNNING' if gw.server else '🔴 STOPPED')
+    st.caption('This is a localhost simulator, NOT a hardware LAN discovery or whole-network packet sniffer.')
+    from datetime import timedelta
+    latest={}
+    for event in live_events:
+        if event.get('decision')=='ALLOW' and event.get('device') not in latest:
+            latest[event['device']]=event
+    device_rows=[]
+    for d in gw.registry.inventory():
+        e=latest.get(d['id'])
+        try:
+            age=(datetime.now(timezone.utc)-datetime.fromisoformat(e['timestamp_utc'])).total_seconds() if e else None
+        except (ValueError,TypeError):age=None
+        device_rows.append({'Device':d['name'],'Device ID':d['id'],'Type':d['type'],
+             'Registered':d['status'],'Virtual IP':d.get('virtual_ip') or '—',
+             'Live status':('🟢 ACTIVE' if d['status']=='active' and age is not None and age<=30 else '⚪ IDLE'),
+             'Observed IP':e.get('source_ip') if e else '—',
+             'Last virtual reading':e.get('reading') if e else None,
+             'Last trusted event':e.get('timestamp_utc') if e else 'Never'})
+    if device_rows:st.dataframe(pd.DataFrame(device_rows),hide_index=True,use_container_width=True)
+    local_blocks=[e for e in live_events if e.get('decision')=='BLOCK']
+    if local_blocks:
+        st.error(f'🚨 {len(local_blocks)} rejected request(s) in the current virtual gateway event window')
+        st.dataframe(pd.DataFrame([{'Time UTC':e.get('timestamp_utc'),'Device':e.get('device'),
+            'Observed IP':e.get('source_ip'),'Reason':e.get('reason')} for e in local_blocks[:15]]),
+            hide_index=True,use_container_width=True)
+    st.caption('Red/green is based on actual virtual HTTP observations; idle means no recent valid request, not physically offline.')
     model_rows=[];route_rows=[];prediction_rows=[]
     try:
         model_rows=registry.models()

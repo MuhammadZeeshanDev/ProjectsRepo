@@ -1,0 +1,11 @@
+QuantumSafe v1.8.0 Test Matrix
+Environment: Linux Python 3.13 with pandas / sklearn / xgboost / lightgbm.
+Tested: 25 tests combined (v1.8.0 new suite + v1.7 backend suite): PASSED.
+Validated: virtual device registration, old-registry credential migration, persistent data,
+    device rotation, admin/reader permission gates, 127.0.0.1 HTTP ALLOW and BLOCK,
+    custom PC B unauthorized attack, synthetic numeric reading storage, ML worker job,
+    persisted model files, Prolog route facts/fallback, checkpoint import quarantine,
+    imported CSV evaluation, clean estimator import detection and RF/XGB/LightGBM fitting.
+UI tests: AST/syntax compilation only; Streamlit unavailable, cannot render browser.
+Windows .exe Prolog, Windows winsound, SQL Server and large 3-GiB CSV: not tested.
+No genuine physical LAN / network IPS integration: implemented in future phases only.

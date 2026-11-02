@@ -43,7 +43,7 @@ def find_swipl(path=None):
 def _facts_for(rows,base):
     facts=[];mapping={};reason=[]
     for row in rows:
-        if row['status']=='retired':continue
+        if row['status'] not in ('evaluated','shadow_approved'):continue
         # Known shortcut in Edge-IIoTset experiments: this feature can reveal
         # data formatting instead of the actual attack. Never auto-route it.
         dataset=str(row.get('dataset_file') or '').casefold()

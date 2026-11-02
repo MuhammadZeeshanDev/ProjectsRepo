@@ -126,6 +126,19 @@ def fit_csv(path, *, algorithm='Random Forest', label=None, features=None, norma
     nclasses=len(classes)
     if nclasses>40:
         raise ValueError(f'{nclasses} classes makes reliable supervised IDS training impractical. Use --binary with verified normal label or reduce target taxonomy.')
+    # Check normal-class mapping BEFORE any CV/model fitting so bad labels
+    # fail quickly instead of wasting minutes on an invalid experiment.
+    requested_normal=normal
+    if binary:
+        normal='normal'
+    elif normal is not None:
+        lookup={x.casefold():x for x in classes}
+        normal=lookup.get(str(normal).strip().casefold())
+        if normal is None:raise ValueError(f'Normal label {requested_normal!r} not present; observed classes: {classes[:15]}')
+    else:
+        lookup={x.casefold():x for x in classes}
+        normal=next((lookup[x] for x in ('normal','benign','0','non-attack','non_attack') if x in lookup),None)
+        if normal is None:raise ValueError('Normal class unclear; select exact normal-label value in UI.')
     counts=np.bincount(y,minlength=nclasses)
     if np.min(counts)<max(folds+3,8):
         raise ValueError(f'Each target class requires at least {max(folds+3,8)} sampled rows; smallest {int(counts.min())}. Increase --max-rows or use --binary.')
@@ -154,17 +167,6 @@ def fit_csv(path, *, algorithm='Random Forest', label=None, features=None, norma
     start=time.perf_counter()
     _=final.predict(test_X.iloc[:min(len(test_X),500)])
     latency_ms=1000*(time.perf_counter()-start)/max(1,min(len(test_X),500))
-    requested_normal=normal
-    if binary:
-        normal='normal'
-    elif normal is not None:
-        lookup={x.casefold():x for x in classes}
-        normal=lookup.get(str(normal).strip().casefold())
-        if normal is None:raise ValueError('--normal-label must match a class in the CSV')
-    else:
-        lookup={x.casefold():x for x in classes}
-        normal=next((lookup[x] for x in ('normal','benign','0','non-attack','non_attack') if x in lookup), None)
-        if normal is None:raise ValueError('Specify --normal-label to correctly calculate false alarms; no known normal class was found.')
     summary,classes_metrics=metrics(y_test,test_pred,classes,normal)
     summary.update({'latency_ms_per_row':round(float(latency_ms),6),'fit_seconds':round(float(elapsed),4),
                     'test_rows':len(y_test),'train_rows':len(y_train),'dataset_rows_seen':sample['rows_seen'],

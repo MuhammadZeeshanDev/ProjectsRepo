@@ -29,25 +29,19 @@ def send_test(test,device='virtual-cctv-01',port=PORT):
   except URLError as exc:raise ConnectionError('Start defender gateway on 127.0.0.1:8765') from exc
  return results
 
-def send_untrusted_to(device_id, port=PORT):
-    """Single credential-free virtual test for an arbitrary claimed device ID.
-
-    No trust credentials from defender are requested or copied.
-    """
-    import re, secrets
-    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,63}', str(device_id)):
-        raise ValueError('Device ID must be 3–64 lower-case letters, digits and hyphens')
-    if not isinstance(port, int) or not 1 <= port <= 65535:
-        raise ValueError('Invalid gateway port')
-    payload = {'device':device_id, 'nonce':secrets.token_hex(12), 'value':42,
-               'token':'untrusted-client', 'device_token':'untrusted-device', 'signature':'0'*64}
-    req = Request(f'http://127.0.0.1:{port}/telemetry', data=json.dumps(payload).encode(),
-                  headers={'Content-Type':'application/json'}, method='POST')
+def send_untrusted_device(device_id,port=PORT):
+    """Custom virtual target test; deliberately never receives trusted credentials."""
+    import re,secrets
+    if not re.fullmatch(r'[a-z0-9][a-z0-9-]{2,63}',str(device_id)):
+        raise ValueError('Valid target ID: 3–64 lowercase alphanumeric/hyphen')
+    if type(port) is not int or not 1<=port<=65535:raise ValueError('Invalid port')
+    payload={'device':device_id,'nonce':secrets.token_hex(12),'value':42,
+             'token':'untrusted-client','device_token':'untrusted-device','signature':'0'*64}
+    req=Request(f'http://127.0.0.1:{port}/telemetry',data=json.dumps(payload).encode(),
+                headers={'Content-Type':'application/json'},method='POST')
     try:
-        with urlopen(req, timeout=3) as response:
-            return json.loads(response.read())
+        with urlopen(req,timeout=3) as result:return json.loads(result.read())
     except HTTPError as exc:
-        if exc.code != 403: raise
+        if exc.code!=403:raise
         return json.loads(exc.read())
-    except URLError as exc:
-        raise ConnectionError('Start the defender gateway at 127.0.0.1:8765') from exc
+    except URLError as exc:raise ConnectionError('Start virtual gateway before PC B test') from exc

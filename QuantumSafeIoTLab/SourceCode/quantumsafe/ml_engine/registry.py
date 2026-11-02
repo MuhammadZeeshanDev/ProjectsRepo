@@ -145,7 +145,7 @@ def load_model(model_id,root=None):
 
 
 def set_status(model_id,status,root=None):
-    if status not in ('evaluated','shadow_approved','retired'):
+    if status not in ('evaluated','shadow_approved','retired','unverified_import'):
         raise ValueError('Invalid model status.')
     with session(root) as db:
         r=db.execute('SELECT status FROM models WHERE id=?',(int(model_id),)).fetchone()
@@ -182,3 +182,13 @@ def recent_predictions(limit=100,root=None):
         rows=db.execute('SELECT time_utc,model_id,threat,prediction,mode,source FROM predictions ORDER BY id DESC LIMIT ?',
                         (min(500,max(1,int(limit))),)).fetchall()
     return [dict(r) for r in rows]
+
+
+def update_validation(model_id, *, dataset_sha, dataset_path, metrics, class_metrics, root=None):
+    with session(root) as db:
+        row=db.execute('SELECT status FROM models WHERE id=?',(int(model_id),)).fetchone()
+        if row is None or row['status']!='unverified_import':
+            raise ValueError('Only quarantined imported checkpoints can be validated here.')
+        db.execute("UPDATE models SET metrics_json=?,class_metrics_json=?,dataset_file=?,dataset_sha256=?,status='evaluated' WHERE id=?",
+           (json.dumps(metrics),json.dumps(class_metrics),str(dataset_path),dataset_sha,int(model_id)))
+        db.commit()
