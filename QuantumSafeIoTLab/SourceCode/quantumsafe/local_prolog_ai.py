@@ -21,11 +21,11 @@ def _finite_number(value):
     except (ValueError, TypeError):
         return None
 
-def normalize_evidence(training=None, events=None):
+def normalize_evidence(training=None, events=None, devices=None, models=None):
     training = training if isinstance(training, dict) else {}
     held = training.get('heldout') if isinstance(training.get('heldout'), dict) else {}
     folds = training.get('folds') if isinstance(training.get('folds'), list) else []
-    bounded_events = (events or [])[:200]
+    bounded_events = (events or [])[:5000]
     blocked = 0
     seen_attacks = Counter()
     for e in bounded_events:
@@ -39,7 +39,17 @@ def normalize_evidence(training=None, events=None):
     f1 = _finite_number(held.get('macro_f1'))
     fold_f1s = [_finite_number(x.get('macro_f1')) for x in folds[:50] if isinstance(x, dict)]
     fold_f1s = [n for n in fold_f1s if n is not None]
+    device_rows = [x for x in (devices or [])[:1000] if isinstance(x, dict)]
+    model_rows = [x for x in (models or [])[:1000] if isinstance(x, dict)]
+    device_states = Counter(str(x.get('status','')).lower() for x in device_rows)
     return {
+        'active_devices': device_states.get('active', 0),
+        'disabled_devices': device_states.get('disabled', 0),
+        'retired_devices': device_states.get('retired', 0),
+        'model_registry_count': len(model_rows),
+        'unverified_models': sum('validated' not in str(x.get('status','')).lower() for x in model_rows),
+        'repeat_block_threshold': blocked >= 5,
+        'unregistered_access': any('not registered' in str(x.get('reason','')).lower() for x in bounded_events if isinstance(x,dict)),
         'algorithm': str(training.get('algorithm') or 'Not trained')[:100],
         'split': str(training.get('split') or 'Unknown')[:40],
         'folds_seen': len(fold_f1s),
@@ -60,6 +70,10 @@ def _facts(e):
     if e['fold_spread'] is not None and e['fold_spread'] > 0.05: facts.append('flag(unstable_folds).')
     if e['blocked_events'] > 0: facts.append('flag(blocked_events).')
     if any(k in DANGEROUS for k in e['attack_types']): facts.append('flag(known_attack_types).')
+    if e['unregistered_access']: facts.append('flag(unregistered_access).')
+    if e['repeat_block_threshold']: facts.append('flag(repeated_blocks).')
+    if e['disabled_devices'] or e['retired_devices']: facts.append('flag(device_lifecycle).')
+    if e['unverified_models']: facts.append('flag(unverified_checkpoints).')
     return '\n'.join(facts) + '\n'
 
 MESSAGES = {
@@ -69,6 +83,10 @@ MESSAGES = {
  'truncated_dataset': ('Dataset coverage limited', 'Retrain using representative records; the current sample may not reflect live traffic.'),
  'blocked_incidents': ('Security events observed', 'Review blocked gateway incidents and verify reasons; a block alone does not prove ML detected an attack.'),
  'known_attack_types': ('Gateway protections active', 'Review impersonation, replay, tampering or unauthorized attempts using actual gateway event evidence.'),
+ 'unregistered_access': ('Unregistered device tried to access gateway', 'Review the attempted device ID. Enroll only authorized devices in LAN Lab; do not treat an unknown IP alone as proof of malice.'),
+ 'repeated_blocks': ('High volume of rejected requests', 'Review recent repeated blocks, rate limits and device identity; verify whether this is a test or unauthorized activity.'),
+ 'device_lifecycle': ('Inventory includes disabled or retired devices', 'Confirm disabled and retired device IDs remain denied; keep retired credentials revoked.'),
+ 'unverified_checkpoints': ('Saved checkpoints need validation', 'Do not load or deploy untrusted model files. Validate feature schema, dataset split and independent test metrics.'),
  'live_unverified': ('Live ML integration not verified', 'Do not enable automatic ML blocking until a TCP/MQTT-compatible feature collector and independent validation are connected.'),
 }
 
@@ -80,6 +98,10 @@ def _fallback_rules(e):
     if e['dataset_truncated']:flags.append('truncated_dataset')
     if e['blocked_events']>0:flags.append('blocked_incidents')
     if any(k in DANGEROUS for k in e['attack_types']):flags.append('known_attack_types')
+    if e['unregistered_access']:flags.append('unregistered_access')
+    if e['repeat_block_threshold']:flags.append('repeated_blocks')
+    if e['disabled_devices'] or e['retired_devices']:flags.append('device_lifecycle')
+    if e['unverified_models']:flags.append('unverified_checkpoints')
     flags.append('live_unverified')
     return flags
 
@@ -98,8 +120,8 @@ def _prolog_rules(e, executable):
     if any(code not in MESSAGES for code in codes): raise ValueError('Unexpected Prolog output')
     return codes
 
-def analyze(training=None, events=None, prolog_executable=None):
-    evidence=normalize_evidence(training,events)
+def analyze(training=None, events=None, prolog_executable=None, devices=None, models=None):
+    evidence=normalize_evidence(training,events,devices,models)
     engine='Local rules (Python fallback; SWI-Prolog not installed)'
     error=None
     executable=prolog_executable if prolog_executable is not None else shutil.which('swipl')

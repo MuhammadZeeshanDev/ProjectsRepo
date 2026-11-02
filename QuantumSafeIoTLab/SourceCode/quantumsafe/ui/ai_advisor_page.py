@@ -1,46 +1,91 @@
-"""Offline local AI & Prolog reasoning inside Administrator's ML Lab."""
+"""Local Prolog + optional on-device language model, integrated inside ML Lab."""
+import json
 import streamlit as st
 from ..local_prolog_ai import analyze
+from ..local_ai_runtime import find_prolog, local_models, ask_local_model, evidence_summary
+
 
 def show_embedded(actor):
     if actor.get('RoleName') != 'Admin':
-        st.error('Administrator only.')
-        return
-    st.subheader('🧠 Local AI + Prolog Security Advisor')
-    st.caption('100% local evidence analysis. No API key, internet or cloud AI required. Prolog applies explainable security rules; it is not a generative language model.')
-    result=st.session_state.get('qs_training_result')
-    events=[]
+        st.error('Administrator only.'); return
+    st.subheader('🧠 Local AI + SWI-Prolog')
+    st.caption('No cloud or API key. Prolog analyzes security facts; optional Ollama adds conversational answers using the same local evidence.')
+    prolog_input = st.text_input('SWI-Prolog executable (optional, if automatic detection fails)',
+                                placeholder=r'C:\Program Files\swipl\bin\swipl.exe', key='qs_prolog_path')
+    executable = find_prolog(prolog_input)
+    if executable:
+        st.success('SWI-Prolog detected locally: ' + executable)
+    else:
+        st.warning('SWI-Prolog not found. Python rule fallback remains available; provide path to swipl.exe if installed.')
+    training = st.session_state.get('qs_training_result')
+    events, event_source = [], 'None'
     try:
         from .virtual_lab import get_gateway, snapshot_events
-        # Avoid creating/starting the gateway merely to load the AI page.
-        from .. import virtual_network
+        events = snapshot_events(get_gateway())
+        event_source = 'Gateway memory (max 200)'
+    except Exception:
+        pass
+    st.selectbox('SQL incident history depth (when enabled)', [200, 1000, 5000], index=1, key='qs_prolog_sql_limit')
+    if st.checkbox('Include SQL Server gateway history', value=False, help='Read up to 5,000 locally stored events; no cloud transfer'):
+        try:
+            from ..gateway_event_store import recent_events
+            sql_limit = st.session_state.get('qs_prolog_sql_limit', 1000)
+            sql_events = recent_events(sql_limit)
+            def key(x):
+                return (str(x.get('timestamp_utc', ''))[:19], str(x.get('device','')),
+                        str(x.get('decision','')), str(x.get('reason','')), str(x.get('source_ip','')))
+            seen = {key(x) for x in events}
+            events = (events + [x for x in sql_events if key(x) not in seen])[:5000]
+            event_source = 'Gateway memory + SQL Server (max 5,000)'
+        except Exception as exc:
+            st.warning('SQL evidence unavailable: ' + type(exc).__name__)
+    inventory, models = [], []
+    try:
         from .virtual_lab import get_gateway
-        # Gateway object is cached across pages; constructing it does not start the HTTP listener.
-        gateway=get_gateway()
-        events=snapshot_events(gateway)
-    except Exception as exc:
-        st.caption('Live gateway event evidence unavailable: '+type(exc).__name__)
-    output=analyze(result,events)
-    a,b,c=st.columns(3)
-    a.metric('Local model trained', 'Yes' if output['evidence']['has_training'] else 'No')
-    b.metric('Recent gateway events',output['evidence']['recent_gateway_events'])
-    c.metric('Blocked events',output['evidence']['blocked_events'])
-    if output['engine'].startswith('SWI-Prolog'):
-        st.success('Reasoning engine: SWI-Prolog — running locally')
-    else:
-        st.warning('Reasoning engine: local Python rules fallback. Install SWI-Prolog and add swipl to PATH to run native Prolog rules.')
-    if output['diagnostic']:st.caption(output['diagnostic'])
-    st.markdown('**Evidence-backed recommendations**')
-    for row in output['recommendations']:
-        with st.expander(row['title'], expanded=row['rule']=='live_unverified'):
+        inventory = get_gateway().registry.inventory()
+    except Exception:
+        pass
+    try:
+        from .ml_lab import connection
+        with connection() as db:
+            rows = db.execute('SELECT name,algorithm,status,created_utc FROM models ORDER BY id DESC LIMIT 40').fetchall()
+        models = [{'name': r[0], 'algorithm': r[1], 'status': r[2], 'created_utc': r[3]} for r in rows]
+    except Exception:
+        pass
+    report = analyze(training, events, prolog_executable=executable or '', devices=inventory, models=models)
+    a, b, c = st.columns(3)
+    a.metric('ML training evidence', 'Loaded' if report['evidence']['has_training'] else 'Not loaded')
+    b.metric('Recent events', report['evidence']['recent_gateway_events'])
+    c.metric('Blocked events', report['evidence']['blocked_events'])
+    if report['diagnostic']: st.error(report['diagnostic'])
+    st.caption('Reasoning engine: ' + report['engine'])
+    for row in report['recommendations']:
+        with st.expander(row['title']):
             st.write(row['action'])
-            st.caption('Applied rule: '+row['rule'])
-    with st.expander('Data used (local only)'):
-        st.json(output['evidence'])
-        st.caption('Input: latest training session metrics and last 200 in-memory gateway events. No raw data rows, model binaries or secrets are loaded by the advisor.')
-    st.download_button('Export local AI assessment (JSON)', __import__('json').dumps(output,indent=2).encode('utf-8'),
-                       'quantumsafe_local_ai_report.json', 'application/json')
-    st.info('The advisor explains available evidence. It cannot automatically retrain models, identify unknown threats with a language model, or claim live ML prediction. Model evaluation and deployment require explicit administrator action.')
+            st.caption('Triggered rule: ' + row['rule'])
+    evidence = evidence_summary(report, models, inventory, event_source, len(events))
+    with st.expander('Evidence available to local AI (no credentials)'):
+        st.json(evidence)
+    st.download_button('Download Prolog assessment JSON', json.dumps(report, indent=2).encode(), 'local_prolog_assessment.json', 'application/json')
+    st.divider()
+    st.subheader('💬 Ask local AI (optional Ollama model)')
+    available = local_models()
+    if available:
+        chosen = st.selectbox('Installed local model', available)
+        question = st.text_area('Ask about folds, errors, device events, or improving model readiness',
+                                placeholder='Compare my latest split and fold results; what should be improved?')
+        if st.button('Analyze using local AI', type='primary'):
+            try:
+                with st.spinner('Running local model...'):
+                    st.session_state['qs_local_ai_last'] = ask_local_model(question, chosen, evidence)
+            except Exception as exc:
+                st.error(str(exc))
+        if st.session_state.get('qs_local_ai_last'):
+            st.markdown(st.session_state['qs_local_ai_last'])
+    else:
+        st.info('No local Ollama model detected. SWI-Prolog works without it. For conversational AI, install Ollama on PC A and pull a model; no API key is needed.')
+    st.warning('AI suggestions are advisory: no automatic ML deployment or security-policy changes. Live TCP/MQTT feature capture is not yet wired to trained models.')
+
 
 def show(actor):
     show_embedded(actor)

@@ -60,38 +60,73 @@ def show(actor):
         st.error('Administrator only.');return
     st.title('🤖 ML Lab — Training, Models & AI')
     st.caption('Administrator workspace: train and compare models, inspect individual folds, evaluate using AI guidance and check deployment safety.')
-    tabs=st.tabs(['🎯 Train & compare','📦 Model library','✨ AI & improvement','🔌 Deployment checks'])
+    tabs=st.tabs(['🎯 Train & compare','🔬 Test CSV','📦 Model library','🧠 Local AI + Prolog','🔌 Deployment checks'])
     with tabs[0]:
-        from ..local_training import algorithms,run_experiment
-        st.info('Local supervised training with a held-out test set. Preprocessing is fitted on each training fold only. A test-set score is NOT proof of live IoT detection.')
-        dataset=st.file_uploader('Training dataset CSV (up to 60 MB, first 20,000 rows)',type=['csv'],key='train_csv')
-        if dataset:
-            raw=dataset.getvalue()
-            if len(raw)>MAX_UPLOAD:st.error('File too large')
-            else:
+        from ..local_training import algorithms, run_experiment
+        from ..large_csv import checked_csv, headers, representative_sample, stage_upload, MAX_CSV_BYTES
+        st.info('Local training on a representative sample from an entire CSV up to 3 GiB. Validation folds and the held-out test set are separate. Large CSV acceptance is NOT full-data training.')
+        source = st.radio('Select CSV source', ['Local file path (recommended for large CSV)', 'Upload CSV in browser'], horizontal=True, key='qs_csv_source')
+        local_path, dataset = '', None
+        columns = []
+        if source.startswith('Local'):
+            local_path = st.text_input('Full CSV path on the PC running QuantumSafe', placeholder=r'C:\Datasets\EdgeIIoTset.csv', key='qs_train_path')
+            if local_path:
                 try:
-                    import pandas as pd
-                    columns=pd.read_csv(io.BytesIO(raw),nrows=0).columns.tolist()
-                    label=st.selectbox('Target label / attack class',columns,key='train_label')
-                    selected=st.multiselect('Input features (never include target)',[x for x in columns if x!=label],default=[x for x in columns if x!=label][:min(10,len(columns)-1)],max_selections=30)
-                    a,b,c=st.columns(3)
-                    algo=a.selectbox('Algorithm',algorithms(),key='train_algo')
-                    split=b.selectbox('Holdout split',['70/30','80/20'],key='train_split')
-                    folds=c.selectbox('Stratified CV folds',[3,5],key='train_folds')
-                    st.caption('Algorithms only appear when installed. Original, ROS and SA-HFS protocols must be supplied as explicitly prepared datasets; this form never claims to reproduce those protocols automatically.')
-                    if st.button('▶️ Train and evaluate now',type='primary'):
-                        with st.spinner('Training on bounded local sample...'):
-                            result=run_experiment(raw,label,selected,algo,0.3 if split=='70/30' else 0.2,folds)
-                        st.session_state['qs_training_result']=result
-                        st.session_state['qs_training_details']=(dataset.name,label,split,folds)
-                except Exception as e:st.error('Training setup failed: '+str(e))
+                    checked = checked_csv(local_path)
+                    columns = headers(checked)
+                    st.caption(f'CSV found: {checked.name} — {checked.stat().st_size / 1024**3:.3f} GiB (max 3 GiB)')
+                except Exception as exc:
+                    st.warning(str(exc))
+        else:
+            dataset = st.file_uploader('Upload CSV (up to 3 GiB; memory-dependent)', type=['csv'], key='train_csv')
+            if dataset:
+                if dataset.size > MAX_CSV_BYTES:
+                    st.error('File exceeds the 3 GiB limit.')
+                else:
+                    try:
+                        dataset.seek(0)
+                        columns = pd.read_csv(dataset, nrows=0).columns.tolist()
+                        dataset.seek(0)
+                    except Exception as exc:
+                        st.error('Cannot read CSV header: ' + str(exc))
+                    st.caption(f'Upload size: {dataset.size / 1024**3:.3f} GiB. Browser upload can require substantial RAM; local file path is safer for 3 GiB.')
+        if columns:
+            label = st.selectbox('Target label / attack class', columns, key='train_label')
+            features = st.multiselect('Input features (maximum 30)', [c for c in columns if c != label],
+                                      default=[c for c in columns if c != label][:min(10, len(columns)-1)], max_selections=30)
+            a, b, c = st.columns(3)
+            algo = a.selectbox('Algorithm (installed)', algorithms(), key='train_algo')
+            split = b.selectbox('Holdout split', ['70/30', '80/20'], key='train_split')
+            folds = c.selectbox('Validation folds', [3, 5], key='train_folds')
+            st.caption('Original/ROS and different feature-selection protocols must be trained as separate explicitly labeled datasets. Each fold is evaluated independently.')
+            if st.button('▶️ Sample full CSV, train and evaluate', type='primary'):
+                try:
+                    with st.spinner('Scanning CSV in bounded chunks; then training selected algorithm...'):
+                        if dataset is not None:
+                            with tempfile.TemporaryDirectory(prefix='qs_train_upload_') as tmp:
+                                sample = representative_sample(stage_upload(dataset, Path(tmp)/'uploaded.csv'), features, label)
+                        else:
+                            sample = representative_sample(local_path, features, label)
+                        raw = sample['sample'].to_csv(index=False).encode('utf-8')
+                        if len(raw) > MAX_UPLOAD:
+                            raise ValueError('Selected feature sample exceeds 60 MiB; choose fewer features or shorter categorical values.')
+                        result = run_experiment(raw, label, features, algo, 0.3 if split == '70/30' else 0.2, folds)
+                        result['truncated_to_first_rows'] = sample['sampled_rows'] < sample['total_rows']
+                        result['source_sample'] = {k:v for k,v in sample.items() if k != 'sample'}
+                        st.session_state['qs_training_result'] = result
+                        st.session_state['qs_training_details'] = (sample['source_file'], label, split, folds)
+                    st.success(f"Training finished on {sample['sampled_rows']:,} sampled rows from {sample['total_rows']:,} parsed CSV rows.")
+                except Exception as exc:
+                    st.error('Training failed: '+type(exc).__name__+': '+str(exc))
+        else:
+            st.caption('Choose an accessible CSV to configure training.')
         result=st.session_state.get('qs_training_result')
         if result:
             st.subheader('Last completed experiment (session only)')
             st.write('Algorithm:',result['algorithm'],' • Split:',result['split'],' • Training records:',result['training_rows'],' • Test records:',result['test_rows'])
             st.dataframe(pd.DataFrame(result['folds']),hide_index=True,use_container_width=True)
             st.caption('Each validation fold stays separate; held-out test metrics are reported independently.')
-            st.json({'held_out_metrics':result['heldout'],'class_order':result['classes'],'confusion_matrix':result['confusion_matrix'],'dataset_truncated':result['truncated_to_first_rows']})
+            st.json({'held_out_metrics':result['heldout'],'class_order':result['classes'],'confusion_matrix':result['confusion_matrix'],'sampled_from_full_csv':result.get('source_sample'), 'dataset_sampled':result['truncated_to_first_rows']})
             st.warning('The held-out split is evaluated ONCE after CV; no online learning, live gateway connection or automatic deployment is performed.')
             if st.button('💾 Save trained checkpoint locally'):
                 import joblib
@@ -103,11 +138,33 @@ def show(actor):
                     digest=import_artifact(f'{result["algorithm"]} {split_name} {nfolds}fold',name,result['algorithm'],'trained.joblib',buff.getvalue(),result['features'],'Locally trained trusted checkpoint. Not validated for live gateway inference. Target: '+lab)
                     st.success('Checkpoint stored (NOT deployed). SHA256: '+digest[:20])
     with tabs[1]:
-        _model_library()
+        st.subheader('Test trusted Edge-IIoTset RF checkpoint on a local CSV')
+        st.caption('Supports up to 3 GiB streamed in chunks. The included 10-feature Random Forest checkpoint is the only preverified model for this test. CSV MUST contain original expected TCP/MQTT features.')
+        test_path = st.text_input('CSV file path for offline model testing', placeholder=r'C:\Datasets\test.csv', key='qs_test_path')
+        chunk_size = st.selectbox('Prediction rows per chunk', [1000, 5000, 10000, 20000], index=2)
+        if st.button('▶️ Run checkpoint inference', disabled=not bool(test_path)):
+            try:
+                from ..edge_rf_inference import predict_local_csv
+                from ..large_csv import checked_csv
+                checked_csv(test_path)
+                with st.spinner('Processing CSV in bounded chunks...'):
+                    outcome = predict_local_csv(test_path, chunk_size=chunk_size)
+                st.session_state['qs_csv_test_result'] = outcome
+            except Exception as exc:
+                st.error(type(exc).__name__ + ': ' + str(exc))
+        outcome = st.session_state.get('qs_csv_test_result')
+        if outcome:
+            st.metric('CSV rows tested', outcome['rows'])
+            st.json({'prediction_counts':outcome['counts'], 'metrics_if_labels_exist':outcome['metrics']})
+            st.dataframe(outcome['preview'], hide_index=True, use_container_width=True)
+            st.code(outcome['output_path'])
+            st.caption('Prediction CSV saved at the local path above. Check free disk space: output can be larger than the input. These are offline predictions, NOT live gateway detections.')
     with tabs[2]:
+        _model_library()
+    with tabs[3]:
         from . import ai_advisor_page
         ai_advisor_page.show_embedded(actor)
-    with tabs[3]:
+    with tabs[4]:
         from .. import deployment_readiness
         deployment_readiness.show()
 

@@ -241,6 +241,15 @@ def show(actor):
     st.subheader('📡 Registered virtual devices')
     st.dataframe(pd.DataFrame([{'Device ID':k,'Device':v,'Connection':'Virtual / registered','Identity':'Per-device credential required','KEM capability':'Self-test only'} for k,v in gateway.registered_devices.items()]),hide_index=True,use_container_width=True)
     st.caption('Registered means configured in this virtual gateway; not proof of a physical connection. Each virtual device now has its own secret credential and HMAC key. KEM self-tests do not establish secure sessions.')
+    st.caption('To register, disable, rotate or retire devices, open 🌐 LAN Lab & Devices.')
+    if actor['RoleName'] == 'Admin' and gateway.registered_devices:
+        new_device = st.selectbox('Send authenticated test telemetry for any enrolled device', list(gateway.registered_devices), format_func=lambda id_: f'{gateway.registered_devices[id_]} · {id_}', key='test_dynamic_device')
+        if st.button('📡 Test selected device connection', disabled=not bool(gateway.server)):
+            try:
+                outcome = gateway.send('CCTV', device_override=new_device)
+                (st.success if outcome['decision'] == 'ALLOW' else st.error)(f"{outcome['decision']}: {outcome['reason']}")
+            except Exception as exc:
+                st.error(str(exc))
     st.info('Connection check: use a trusted device test to generate valid telemetry. ACTIVE (observed) lasts 30 seconds; then it becomes IDLE. Invalid PC B requests never count as a successful connection.')
     if actor['RoleName']=='Admin':
         st.subheader('🔐 Test ML-KEM on every virtual device')

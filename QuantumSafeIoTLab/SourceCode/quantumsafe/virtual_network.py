@@ -12,6 +12,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from .realtime_alarm import AlarmEngine
+from .device_registry import DeviceRegistry
+from .permissions import require_role
 
 class VirtualGateway:
     def __init__(self):
@@ -24,13 +26,39 @@ class VirtualGateway:
         self.server = None
         self.thread = None
         self.port = None
-        self.registered_devices = {'virtual-cctv-01':'CCTV camera', 'virtual-router-01':'Router', 'virtual-sensor-01':'Temperature sensor'}
-        # Independent credentials per enrolled virtual device; never exposed to PC B.
-        self.device_keys = {device: secrets.token_bytes(32) for device in self.registered_devices}
-        self.device_tokens = {device: secrets.token_urlsafe(24) for device in self.registered_devices}
+        self.registry = DeviceRegistry()
+        self._reload_registry()
         self.event_sink = None  # optional SQL writer; called after in-memory event append
         self.last_persist_error = None
         self.alarm_engine = AlarmEngine()
+
+    def _reload_registry(self):
+        creds = self.registry.active_credentials()
+        self.registered_devices = {k: val[0] for k, val in creds.items()}
+        self.device_keys = {k: val[1] for k, val in creds.items()}
+        self.device_tokens = {k: val[2] for k, val in creds.items()}
+
+    def manage_device(self, action, device_id, role, actor='Administrator', name=None, kind=None):
+        """Administrator-only atomic lifecycle operation, immediately enforced by HTTP handler."""
+        require_role(role, ('Admin',))
+        with self.lock:
+            if action == 'enroll':
+                self.registry.enroll(device_id, name, kind)
+            elif action == 'disable':
+                self.registry.set_state(device_id, 'disabled')
+            elif action == 'enable':
+                self.registry.set_state(device_id, 'active')
+            elif action == 'retire':
+                self.registry.set_state(device_id, 'retired')
+            elif action == 'rotate':
+                self.registry.rotate(device_id)
+            else:
+                raise ValueError('Unsupported operation')
+            self._reload_registry()
+            # Cached nonces/call history of the former identity must not outlive rotation.
+            self.nonces = {item for item in self.nonces if item[0] != device_id}
+            self.calls.pop(device_id, None)
+        self.registry.audit(action, device_id, actor)
 
     def start(self, port=8765):
         if self.server:

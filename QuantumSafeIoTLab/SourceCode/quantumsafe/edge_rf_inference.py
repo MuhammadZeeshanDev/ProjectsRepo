@@ -7,7 +7,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL_PATH = ROOT / 'Assets' / 'EdgeIIoT_RF_70_30' / 'SA_HFS_v3__Random_Forest_Model.joblib'
-MAX_BYTES = 1024 * 1024 * 1024
+MAX_BYTES = 3 * 1024 * 1024 * 1024
 
 
 def load_checkpoint():
@@ -38,7 +38,7 @@ def _cached_checkpoint(digest):
 
 def predict_csv(raw: bytes, max_rows=10000):
     if not raw or len(raw) > MAX_BYTES:
-        raise ValueError('Upload a nonempty CSV smaller than 1 GB.')
+        raise ValueError('Upload a nonempty CSV no larger than 3 GiB; for large files use the local-path streaming tester.')
     checkpoint = load_checkpoint()
     cols = list(checkpoint['features'])
     df = pd.read_csv(io.BytesIO(raw), nrows=max_rows, low_memory=False)
@@ -91,8 +91,8 @@ def predict_local_csv(path, chunk_size=10000, progress=None):
     path = Path(path).expanduser().resolve()
     if not path.is_file() or path.suffix.lower() != '.csv':
         raise ValueError('Select an existing .csv file on this computer.')
-    if path.stat().st_size == 0:
-        raise ValueError('CSV is empty.')
+    if path.stat().st_size == 0 or path.stat().st_size > MAX_BYTES:
+        raise ValueError('CSV must be non-empty and no larger than 3 GiB.')
     cols = list(checkpoint['features'])
     output = tempfile.NamedTemporaryFile(prefix='quantumsafe_predictions_', suffix='.csv', delete=False)
     output.close()

@@ -1,0 +1,18 @@
+QuantumSafe v1.5.0 local verification notes (Linux container)
+- Python source AST/syntax compilation: PASS
+- Automated pytest suite in Tests/test_v150_major.py: 12 PASS
+- Python loopback HTTP gateway tests: enrollment, trusted allow, PC B unauthorized reject,
+  disabled-device rejection, alarm enqueue, model role denial: PASS (unit/integration suite)
+- Device registry persists across reconstructed registry instances: PASS
+- Rotated credential invalidation: PASS
+- Representative sample across entire small CSV, reproducibility, 3-GiB sparse file boundary: PASS
+- Actual sklearn training smoke: Random Forest, XGBoost, LightGBM with 3 separate folds
+  and a 70/30 holdout: PASS on synthetic 250-row dataset. Toy metrics are not product accuracy.
+- Prolog Python fallback and limited evidence without device secrets: PASS
+- Local Ollama unavailable pathway and safe loopback destination: PASS
+- Windows native SWI-Prolog: NOT RUN (swipl.exe unavailable in container)
+- Windows UI: NOT RUN (Streamlit not installed in container, package downloads unavailable)
+- SQL Server 2022: NOT RUN (database and pyodbc unavailable)
+- Windows audio: NOT RUN (Linux does not play Windows winsound)
+- Actual 3-GiB CSV processing: NOT RUN (limit and streaming logic tested on small synthetic files)
+- All systems should be acceptance-tested on your installed PC A before relying on alerts.
