@@ -17,18 +17,22 @@ RULES=Path(__file__).resolve().parents[1]/'rules'/'ids_model_selector.pl'
 
 
 def find_swipl(path=None):
-    candidates=[]
-    if path:candidates.append(path)
-    if os.getenv('QUANTUMSAFE_SWIPL'):candidates.append(os.getenv('QUANTUMSAFE_SWIPL'))
-    v=shutil.which('swipl')
-    if v:candidates.append(v)
-    if os.name=='nt':
-        for key in ('ProgramFiles','ProgramFiles(x86)'):
-            root=os.environ.get(key)
-            if not root:continue
-            parent=Path(root)
-            candidates.append(str(parent/'swipl'/'bin'/'swipl.exe'))
-            candidates += [str(x) for x in (parent/'SWI-Prolog').glob('*/bin/swipl.exe')]
+    if path is not None:
+        if not path:
+            return None
+        candidates = [path]
+    else:
+        candidates = []
+        if os.getenv('QUANTUMSAFE_SWIPL'):candidates.append(os.getenv('QUANTUMSAFE_SWIPL'))
+        v=shutil.which('swipl')
+        if v:candidates.append(v)
+        if os.name=='nt':
+            for key in ('ProgramFiles','ProgramFiles(x86)'):
+                root=os.environ.get(key)
+                if not root:continue
+                parent=Path(root)
+                candidates.append(str(parent/'swipl'/'bin'/'swipl.exe'))
+                candidates += [str(x) for x in (parent/'SWI-Prolog').glob('*/bin/swipl.exe')]
     for c in candidates:
         if not c:continue
         try:

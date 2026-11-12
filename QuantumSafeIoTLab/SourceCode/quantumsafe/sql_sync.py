@@ -63,7 +63,9 @@ class SqlSync:
         # No token/key/signature should be copied into the database outbox.
         allowed=('event_id','timestamp_utc','device','decision','reason','source',
                  'request_type','source_ip','attack_type','affected_component',
-                 'precaution','reading','identity_verified','ips_action')
+                 'precaution','reading','identity_verified','ips_action',
+                 'crypto_algorithm','crypto_recipient','crypto_verified','crypto_ciphertext_bytes',
+                 'crypto_kem_ciphertext_bytes','crypto_ciphertext_sha256')
         safe={k:event[k] for k in allowed if k in event}
         if not safe.get('event_id'):raise ValueError('Gateway event ID is required')
         self._put('event:'+str(safe['event_id']),'event',safe)

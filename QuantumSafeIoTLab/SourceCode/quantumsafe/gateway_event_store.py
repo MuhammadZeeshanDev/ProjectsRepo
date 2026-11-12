@@ -35,6 +35,9 @@ def initialize():
                 'AffectedComponent':'NVARCHAR(128)', 'Precaution':'NVARCHAR(512)',
                 'GatewayEventUid':'NVARCHAR(64)', 'Reading':'FLOAT',
                 'IdentityVerified':'BIT', 'IpsAction':'NVARCHAR(250)',
+                'CryptoAlgorithm':'NVARCHAR(64)', 'CryptoRecipient':'NVARCHAR(64)',
+                'CryptoVerified':'BIT', 'CryptoCiphertextBytes':'INT',
+                'CryptoKEMCiphertextBytes':'INT', 'CryptoCiphertextSha256':'CHAR(64)',
             }
             for col, dtype in extra.items():
                 # Fixed, developer-owned identifiers only; no user SQL strings.
@@ -91,6 +94,15 @@ def insert_event(event):
           str(event.get('attack_type',''))[:128],str(event.get('affected_component',''))[:128],
           str(event.get('precaution',''))[:512],uid,reading,
           bool(event.get('identity_verified',False)),str(event.get('ips_action',''))[:250],uid,uid)
+        if event.get('request_type')=='encrypted_mesh':
+            con.cursor().execute("""UPDATE dbo.VirtualGatewayEvents SET
+              CryptoAlgorithm=?, CryptoRecipient=?, CryptoVerified=?, CryptoCiphertextBytes=?,
+              CryptoKEMCiphertextBytes=?, CryptoCiphertextSha256=?
+              WHERE GatewayEventUid=? AND RequestType='encrypted_mesh'""",
+              str(event.get('crypto_algorithm',''))[:64],str(event.get('crypto_recipient',''))[:64],
+              bool(event.get('crypto_verified',False)),int(event.get('crypto_ciphertext_bytes') or 0),
+              int(event.get('crypto_kem_ciphertext_bytes') or 0),
+              str(event.get('crypto_ciphertext_sha256',''))[:64],uid)
     return True
 
 def upsert_device(item):
@@ -125,13 +137,18 @@ def recent_events(limit=1000):
         cur=con.cursor()
         cur.execute(f"""SELECT TOP ({limit}) EventId, EventTimeUtc, DeviceId, Decision,
           Reason, EventSource, RequestType, SourceIp, AttackType, AffectedComponent,
-          Precaution, GatewayEventUid, Reading, IdentityVerified, IpsAction
+          Precaution, GatewayEventUid, Reading, IdentityVerified, IpsAction,
+          CryptoAlgorithm, CryptoRecipient, CryptoVerified, CryptoCiphertextBytes,
+          CryptoKEMCiphertextBytes, CryptoCiphertextSha256
           FROM dbo.VirtualGatewayEvents ORDER BY EventId DESC""")
         return [dict(event_id=r[11] or str(r[0]),sql_event_id=int(r[0]),
           timestamp_utc=r[1].isoformat(timespec='milliseconds')+'Z',
           device=r[2],decision=r[3],reason=r[4],source=r[5],request_type=r[6],
           source_ip=r[7],attack_type=r[8],affected_component=r[9],precaution=r[10],
-          reading=r[12],identity_verified=bool(r[13]),ips_action=r[14])
+          reading=r[12],identity_verified=bool(r[13]),ips_action=r[14],
+          crypto_algorithm=r[15],crypto_recipient=r[16],crypto_verified=bool(r[17]),
+          crypto_ciphertext_bytes=r[18],crypto_kem_ciphertext_bytes=r[19],
+          crypto_ciphertext_sha256=r[20])
           for r in cur.fetchall()]
 
 def counts():

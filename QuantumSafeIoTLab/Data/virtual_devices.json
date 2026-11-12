@@ -1,0 +1,38 @@
+{
+  "devices": {
+    "virtual-cctv-01": {
+      "created": "2026-11-08T10:32:43+00:00",
+      "key_hex": "9f914e78a05f1a085017739de0ba5a59d04530de94e7926e44f5acc6c5b39566",
+      "kind": "Camera",
+      "modified": "2026-11-08T10:32:43+00:00",
+      "name": "CCTV camera",
+      "status": "active",
+      "token": "N_Z_8VZqETuQZf5E2fy11p7maKWR_b2QNdD_c4gEVlM",
+      "virtual_ip": "",
+      "virtual_mac": ""
+    },
+    "virtual-router-01": {
+      "created": "2026-11-08T10:32:43+00:00",
+      "key_hex": "87b7b4b5e99144213dda661366ffeb3bd305f9961e1b44eccdbb83f074e866a9",
+      "kind": "Router",
+      "modified": "2026-11-08T10:32:43+00:00",
+      "name": "Router",
+      "status": "active",
+      "token": "UbZAUbkbEQ6D72jH-e7Oewum8LYa9ahObzpsOUpxilI",
+      "virtual_ip": "",
+      "virtual_mac": ""
+    },
+    "virtual-sensor-01": {
+      "created": "2026-11-08T10:32:43+00:00",
+      "key_hex": "17018c2196adc30e0e17b04001bbab4387af5716397ba9dd925bb7f08f43be0a",
+      "kind": "Sensor",
+      "modified": "2026-11-08T10:32:43+00:00",
+      "name": "Temperature sensor",
+      "status": "active",
+      "token": "nMYNd57jORlOhXltfKWivykGNUriBmU-WA14lipBQ7A",
+      "virtual_ip": "",
+      "virtual_mac": ""
+    }
+  },
+  "version": 1
+}

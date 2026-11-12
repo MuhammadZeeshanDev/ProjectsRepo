@@ -1,4 +1,4 @@
-"""QuantumSafe v2.0.0 — supervised virtual IDS/IPS & live monitoring."""
+"""QuantumSafe v2.1.0 — final virtual IDS/IPS demonstration application."""
 import streamlit as st
 from quantumsafe import users
 from quantumsafe.version import APP_VERSION
@@ -12,6 +12,15 @@ if not actor_id:login.show();st.stop()
 try:actor=users.active_actor(int(actor_id))
 except Exception:
     st.session_state.pop('actor_id',None);st.error('Session unavailable; sign in again.');st.stop()
+# Block every protected screen until the one-time demo password is rotated.
+try:
+    from quantumsafe.ui import password_change
+    if password_change.required(int(actor_id)):
+        password_change.show(actor)
+        st.stop()
+except Exception:
+    st.error('Cannot check account security state. Verify SQL Server connection.')
+    st.stop()
 role=actor.get('RoleName')
 if role not in ('Admin','Researcher'):
     st.session_state.clear();st.error('Unsupported role');st.stop()

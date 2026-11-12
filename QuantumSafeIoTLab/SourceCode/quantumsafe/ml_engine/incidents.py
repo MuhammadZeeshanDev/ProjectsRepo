@@ -23,7 +23,7 @@ def _summaries(events):
         counts=aggregate.setdefault(device,Counter())
         counts['blocked']+=1
         if 'replay' in text or 'nonce' in text:counts['replay']+=1
-        if any(k in text for k in ('invalid hmac','invalid signature','invalid mac','tampering','crypto fail')):
+        if any(k in text for k in ('invalid hmac','invalid signature','invalid mac','tampering','crypto fail','authentication failed')):
             counts['crypto']+=1
         if 'not registered' in text or 'unregistered' in text or 'unknown device' in text:
             counts['unknown']+=1

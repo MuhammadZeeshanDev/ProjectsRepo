@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import sqlite3
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,19 @@ def identity(event):
     stable = [normalized_time] + [str(event.get(k) or '') for k in
               ('device', 'decision', 'reason', 'source_ip', 'request_type')]
     return hashlib.sha256(json.dumps(stable, ensure_ascii=True).encode()).hexdigest()[:24]
+
+
+def persistent_alert_uid(event):
+    """Prefer gateway's immutable event UUID for stable alert acknowledgement.
+
+    SQL mirroring can replace the in-memory version of the same event, and
+    ordinal/fingerprint identifiers can then shift. The gateway UUID is
+    preserved by the SQL outbox and survives that transition.
+    """
+    event_id = event.get('event_id')
+    if isinstance(event_id, str) and re.fullmatch(r'[0-9a-fA-F]{32}', event_id):
+        return hashlib.sha256(('gateway:' + event_id.lower()).encode('ascii')).hexdigest()[:24]
+    return None
 
 
 def _connect(db_path=None):
@@ -77,17 +91,25 @@ def merge_events(local_events, sql_events=None):
     combined=[]
     for fingerprint in set(sql_groups)|set(local_groups):
         sql=sql_groups[fingerprint];local=local_groups[fingerprint]
-        # SQL is the persistent source of truth; append only locally pending events.
-        chosen=(sql + local[len(sql):]) if len(sql)<=len(local) else sql
+        # SQL is the durable source of truth. When both sides carry gateway UUIDs,
+        # merge by UUID, NOT list position: newest-local-first versus SQL sync order
+        # are not guaranteed to align. Positional fallback is only for legacy rows
+        # without immutable gateway UUIDs.
+        sql_ids={persistent_alert_uid(x) for x in sql}
+        if sql_ids and all(persistent_alert_uid(x) for x in local):
+            chosen=sql+[x for x in local if persistent_alert_uid(x) not in sql_ids]
+        else:
+            chosen=(sql + local[len(sql):]) if len(sql)<=len(local) else sql
         for ordinal,ev in enumerate(chosen):
-            uid=hashlib.sha256(f'{fingerprint}/{ordinal}'.encode()).hexdigest()[:24]
-            combined.append(dict(ev,console_uid=uid))
+            legacy_uid=hashlib.sha256(f'{fingerprint}/{ordinal}'.encode()).hexdigest()[:24]
+            uid=persistent_alert_uid(ev) or legacy_uid
+            combined.append(dict(ev,console_uid=uid,legacy_console_uid=legacy_uid))
     return sorted(combined,key=lambda x:parsed_time(x.get('timestamp_utc')) or datetime.min.replace(tzinfo=timezone.utc),reverse=True)
 
 
 def severity(event):
     reason=str(event.get('reason') or '').lower()
-    if 'integrity' in reason or 'tamper' in reason or 'quarantine' in reason: return 'critical'
+    if 'integrity' in reason or 'tamper' in reason or 'authentication failed' in reason or 'quarantine' in reason: return 'critical'
     if 'replay' in reason or 'gateway token' in reason or 'per-device credential' in reason:return 'high'
     if 'rate limit' in reason or 'not registered' in reason:return 'medium'
     return 'medium'
@@ -147,12 +169,12 @@ def snapshot(gateway, sql_events=None, acked=None, now=None, model_count=0, rout
         dt=parsed_time(ev.get('timestamp_utc'))
         alerts.append({'id':ev['console_uid'],'ts':dt.isoformat() if dt else str(ev.get('timestamp_utc','')),
                        'severity':severity(ev),'title':str(ev.get('reason') or 'Rejected request')[:200],
-                       'engine':'Virtual HTTP gateway · rules','source_ip':str(ev.get('source_ip') or 'Unknown')[:70],
+                       'engine':'Virtual secure mesh · cryptography' if ev.get('request_type')=='encrypted_mesh' else 'Virtual HTTP gateway · rules','source_ip':str(ev.get('source_ip') or 'Unknown')[:70],
                        'device_id':str(ev.get('device') or ''),'action':str(ev.get('ips_action') or 'Request rejected by local gateway'),
-                       'acknowledged':ev['console_uid'] in acked})
+                       'acknowledged':(ev['console_uid'] in acked or ev['legacy_console_uid'] in acked)})
         if len(alerts)>=40:break
     rejected_count=sum(e['decision']=='BLOCK' for e in recent_24h)
-    msg=('Local virtual gateway active — data is from authenticated HTTP telemetry and recorded rejections. '
+    msg=('Local virtual gateway active — data is from authenticated HTTP telemetry, encrypted virtual device messages and recorded rejections. '
          'Not physical LAN packet capture, not firewall isolation, and not live ML-based IPS. '
          f'{model_count} saved model(s), {routes} shadow route(s).') if gateway_running else (
          'Virtual gateway stopped. Historical events may still appear. Start virtual gateway in Devices & Installation. '
@@ -161,7 +183,7 @@ def snapshot(gateway, sql_events=None, acked=None, now=None, model_count=0, rout
             'blocked_24h':rejected_count,'visible_events_24h':len(recent_24h),
             'traffic':{'requests':req,'rejected_fraction':frac},'model_count':model_count,
             'route_count':routes,'footer':msg,
-            'events':events[:200], 'source':'existing QuantumSafe gateway registry + HTTP event history'}
+            'events':events[:200], 'source':'existing QuantumSafe virtual gateway registry + event history'}
 
 
 def public_snapshot(snapshot_data):

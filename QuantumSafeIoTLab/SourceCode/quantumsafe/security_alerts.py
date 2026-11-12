@@ -13,7 +13,7 @@ def alarm_eligible(event):
     if not isinstance(event, dict):
         return False
     return (str(event.get('decision', '')).upper() == 'BLOCK'
-            and event.get('source') in ('LOCAL_HTTP', 'MANUAL_CONTENT_RULES'))
+            and event.get('source') in ('LOCAL_HTTP', 'MANUAL_CONTENT_RULES', 'VIRTUAL_MESH'))
 
 
 def next_alarm_event(events_newest_first, previously_seen, max_history=500):

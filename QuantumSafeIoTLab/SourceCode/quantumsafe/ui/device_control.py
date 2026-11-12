@@ -114,13 +114,15 @@ def show(actor):
                         if change in ('disable','retire'):runner.stop(target)
                         st.success('Applied: '+change);st.rerun()
                     except Exception as exc:st.error(str(exc))
+    from .secure_mesh_panel import show as show_secure_mesh
+    show_secure_mesh(actor,gw)
     from .ips_control import show_ips_controls
     show_ips_controls(actor,gw)
     st.divider()
     from . import acceptance_station
     acceptance_station.show(actor,gw)
     _sql_diagnostics(gw)
-    st.info('To connect a REAL camera/router later, a separate authenticated provisioning agent, secure key exchange and a routing/collector integration are required. This release simulates devices on localhost.')
+    st.info('ML-KEM device-to-device messaging above uses real cryptography in an in-process virtual simulation. REAL devices additionally require an authenticated provisioning agent, independent endpoint key storage and network routing/collector integration.')
 
 
 def _sql_diagnostics(gw):

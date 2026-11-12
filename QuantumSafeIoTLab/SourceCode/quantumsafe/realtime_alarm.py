@@ -16,13 +16,16 @@ SECURITY_REASONS = frozenset({
     'Replay nonce detected',
     'Rate limit: 8 requests per 10 seconds',
     'Virtual IPS quarantine active',
-    'Virtual IPS quarantine active',
+    'Encrypted packet authentication failed (tampering or invalid key)',
+    'Encrypted packet replay blocked',
+    'Virtual IPS quarantine blocks encrypted traffic',
+    'Unregistered or disabled device',
 })
 
 
 def should_alarm(event):
     return (isinstance(event, dict)
-            and event.get('source') == 'LOCAL_HTTP'
+            and event.get('source') in ('LOCAL_HTTP','VIRTUAL_MESH')
             and event.get('decision') == 'BLOCK'
             and event.get('reason') in SECURITY_REASONS)
 
@@ -121,7 +124,8 @@ def _windows_player(event):
     if hasattr(winsound,'SND_MEMORY'):
         try:
             winsound.PlaySound(_siren_wav(critical=event.get('reason') in
-                                  ('Message integrity check failed','Virtual IPS quarantine active')),
+                                  ('Message integrity check failed','Virtual IPS quarantine active',
+                                   'Encrypted packet authentication failed (tampering or invalid key)')),
                                winsound.SND_MEMORY)
             return True
         except (RuntimeError, OSError, AttributeError) as exc:

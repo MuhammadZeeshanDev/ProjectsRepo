@@ -116,14 +116,14 @@ def _live_dashboard():
     cols[2].metric('Rejected',agg['block'])
     cols[3].metric('Rejection rate',f"{100*agg['block']/agg['total']:.1f}%" if agg['total'] else '—')
     cols[4].metric('Devices observed',len(agg['by_device']))
-    st.caption(f'{sql_status} · Time labels UTC · Available HTTP gateway events (not captured IP packets). '
+    st.caption(f'{sql_status} · Time labels UTC · Available virtual gateway events (telemetry and encrypted messages, not captured IP packets). '
                f'History is bounded; a 24h filter does not guarantee full 24h retention. Updated every 10 seconds.')
     if agg['total']<1:
         st.info('No gateway activity in the selected time window. Start the gateway and generate real virtual-device readings or security tests to populate charts.')
     else:
         l,r=st.columns([1.7,1])
         with l:
-            _title('Activity timeline','Observed authorized vs rejected HTTP gateway requests · 15-minute intervals')
+            _title('Activity timeline','Observed authorized vs rejected virtual gateway requests · 15-minute intervals')
             st.plotly_chart(build_timeline(agg),key='qs_timeline',use_container_width=True,config={'displaylogo':False})
         with r:
             _title('Request outcomes','Actual decisions in the visible event history')

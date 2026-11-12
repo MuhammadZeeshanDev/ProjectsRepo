@@ -18,6 +18,13 @@ def _live_metrics():
         c2.metric('Enrolled virtual devices',len(data['devices']))
         c3.metric('Saved ML models',data['model_count'])
         c4.metric('Shadow ML routes',data['route_count'])
+        encrypted=[x for x in data.get('events',[]) if x.get('request_type')=='encrypted_mesh']
+        if encrypted:
+            e1,e2,e3=st.columns(3)
+            e1.metric('🔐 ML-KEM device messages',len(encrypted))
+            e2.metric('AES-GCM verified',sum(x.get('decision')=='ALLOW' for x in encrypted))
+            e3.metric('Crypto packets rejected',sum(x.get('decision')=='BLOCK' for x in encrypted))
+            st.caption('ML-KEM-768 + HKDF-SHA256 + AES-256-GCM, between simulated enrolled endpoints. Metadata from real local cryptographic tests; not physical-network capture.')
         st.caption(sql_status+' · Counts reflect available gateway event history; NOT captured network packets.')
         return data
     except Exception as exc:
@@ -30,17 +37,27 @@ def _admin_alert_tools(actor):
     with st.expander('🛠 Administrator · Alert actions and evidence export'):
         data,_=security_console.collect()
         pending=[a for a in data['alerts'] if not a['acknowledged']]
+        acknowledged=sum(1 for a in data['alerts'] if a['acknowledged'])
+        st.caption(f'Visible alerts: {len(pending)} not acknowledged · {acknowledged} acknowledged. Acknowledgement records review; it does not resolve the underlying threat.')
+        just_acknowledged=st.session_state.pop('qs_ack_success',None)
+        if just_acknowledged:
+            st.success('✓ Alert acknowledged and saved. Live dashboard should update within 3 seconds.')
         if pending:
             label={a['id']:f"{a['ts']} · {a['device_id']} · {a['title']}" for a in pending}
             aid=st.selectbox('Select rejected event to acknowledge',list(label),format_func=lambda x:label[x])
-            if st.button('✓ Acknowledge selected event'):
-                # Re-read pending events to prevent acknowledgement of arbitrary IDs.
-                if aid not in {a['id'] for a in security_console.collect()[0]['alerts']}:
-                    st.error('Event is no longer in the active alert feed.')
+            if st.button('✓ Acknowledge selected event',key='qs_ack_selected_203'):
+                # Re-read pending events; never allow arbitrary or already resolved IDs.
+                visible_pending={a['id'] for a in security_console.collect()[0]['alerts'] if not a['acknowledged']}
+                if aid not in visible_pending:
+                    st.error('Alert no longer pending. Reload the list.')
                 else:
                     console_data.acknowledge(aid,actor)
-                    st.success('Acknowledgement saved. Refresh the screen to see it.')
-                    st.rerun()
+                    # Verify local persistence before claiming successful acknowledgement.
+                    if aid in console_data.acked_uids():
+                        st.session_state['qs_ack_success']=aid
+                        st.rerun()
+                    else:
+                        st.error('Acknowledgement did not persist. Check local Data folder permissions.')
         else:st.success('No unacknowledged rejected requests in the visible history.')
         fields=['timestamp_utc','device','decision','reason','source_ip','attack_type','source']
         buf=io.StringIO();writer=csv.DictWriter(buf,fieldnames=fields,extrasaction='ignore')

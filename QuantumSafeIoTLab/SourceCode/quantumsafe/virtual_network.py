@@ -39,6 +39,8 @@ class VirtualGateway:
         self._viewers = {}  # Short-lived, unpredictable local dashboard access tokens.
         self.ips = VirtualIPS()
         self.live_shadow = LiveShadowWorker()
+        from .secure_mesh import SecureMesh
+        self.secure_mesh = SecureMesh(self)
 
     def _reload_registry(self):
         credentials=self.registry.credentials()
@@ -54,6 +56,7 @@ class VirtualGateway:
                                        virtual_ip=virtual_ip,virtual_mac=virtual_mac,
                                        actor=actor.get('Username','Admin'))
             self._reload_registry()
+            self.secure_mesh.purge_revoked()
             # Registry JSON is authoritative for credentials; SQL gets metadata only.
             try:
                 item=next(x for x in self.registry.inventory() if x['id']==result)
@@ -149,8 +152,22 @@ class VirtualGateway:
         with self.lock:self._viewers.pop(token,None)
 
     def viewer_state(self):
-        from . import console_data
-        return console_data.public_snapshot(console_data.snapshot(self,[],set()))
+        """Viewer and Streamlit controls MUST use the same persisted ack state.
+
+        Acknowledge is an administrative action handled by Streamlit. This
+        short-lived-token endpoint remains read-only; it only reads the local
+        ack ledger and (when available) SQL Server's mirrored event records.
+        """
+        from . import console_data, gateway_event_store
+        sql_events = []
+        try:
+            if gateway_event_store.is_initialized():
+                sql_events = gateway_event_store.recent_events(600)
+        except Exception:
+            # SQL outage must not break monitoring or lose acknowledged flags.
+            pass
+        return console_data.public_snapshot(console_data.snapshot(
+            self, sql_events, console_data.acked_uids()))
 
     def stop(self):
         if self.server:
@@ -161,6 +178,36 @@ class VirtualGateway:
             self.thread = None
             self.port = None
             with self.lock:self._viewers.clear()
+
+    def secure_device_message(self, source_id, destination_id, text, *, scenario='normal'):
+        """Virtual gateway relay event; plaintext never placed in events or SQL."""
+        import uuid
+        try:
+            outcome=self.secure_mesh.exchange(source_id,destination_id,text,scenario=scenario)
+        except (ValueError, PermissionError) as exc:
+            outcome={'decision':'BLOCK','reason':str(exc),'sender':str(source_id)[:64],
+                     'receiver':str(destination_id)[:64],'algorithm':'ML-KEM-768',
+                     'encryption':'AES-256-GCM','scenario':scenario,
+                     'receiver_opened':False,'ciphertext_bytes':0,'kem_ciphertext_bytes':0,
+                     'ciphertext_sha256':'','delivered_text':None}
+        decision=outcome['decision']
+        event={'event_id':uuid.uuid4().hex,'timestamp_utc':datetime.now(timezone.utc).isoformat(timespec='seconds'),
+               'device':str(source_id)[:64], 'decision':decision,'reason':outcome['reason'],
+               'source':'VIRTUAL_MESH', 'request_type':'encrypted_mesh','source_ip':'127.0.0.1',
+               'attack_type':'No confirmed attack' if decision=='ALLOW' else 'Encrypted device communication rejected',
+               'affected_component':'Virtual secure device link','precaution':'Inspect device enrollment, ciphertext integrity and replay protection',
+               'reading':None, 'identity_verified':decision=='ALLOW',
+               'crypto_algorithm':outcome.get('algorithm','ML-KEM-768'),
+               'crypto_recipient':str(destination_id)[:64],
+               'crypto_verified':decision=='ALLOW',
+               'crypto_ciphertext_bytes':outcome.get('ciphertext_bytes',0),
+               'crypto_kem_ciphertext_bytes':outcome.get('kem_ciphertext_bytes',0),
+               'crypto_ciphertext_sha256':outcome.get('ciphertext_sha256','')}
+        with self.lock:self.events.appendleft(event)
+        if decision=='BLOCK':self.alarm_engine.notify(event)
+        try:self.sql_sync.enqueue_event(event)
+        except Exception as exc:self.last_persist_error=f'{type(exc).__name__}: {exc}'
+        return {**outcome,'event_id':event['event_id'],'sql_state':'queued (not confirmed)'}
 
     def sign(self, device, nonce, value):
         msg = json.dumps([device, nonce, value], separators=(',', ':'), ensure_ascii=True).encode()
